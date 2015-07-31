@@ -1,0 +1,53 @@
+#!/bin/sh -eu
+
+################################################################################
+usage () {
+  echo "Usage:"`basename $0`:" <device>"
+  echo "Prepare <device> as an encrypted disk using LUKS"
+  exit 1
+}
+
+################################################################################
+do_cmd () {
+  echo "$@"
+  "$@"
+}
+
+################################################################################
+if [ `id -u` != 0 ]; then
+  echo "ERROR: this operation requires you to be root."
+  exit 1
+fi
+
+if [ $# -ne 1 -o ! -b "$1" ]; then
+  usage
+  exit 1
+fi
+
+################################################################################
+device=$1
+partition=${device}1
+map=`basename $partition`_crypt
+
+read -p "Really destroy all data on $device? (y/n): " answer
+[ "$answer" = "y" -o "$answer" = "Y" ] || exit
+
+################################################################################
+echo "==> creating partition table"
+do_cmd parted -s $device -- mklabel gpt mkpart primary ext4 1 -1
+
+echo "==> setting up encryption formatting, enter disk password"
+do_cmd cryptsetup -c aes -s 256 -h sha256 --batch-mode -y \
+           luksFormat $partition
+
+echo "==> mapping encrypted partition, enter disk password"
+do_cmd cryptsetup luksOpen $partition $map
+
+echo "==> creating file system on encrypted partition"
+do_cmd mkfs.ext4 /dev/mapper/$map
+do_cmd sleep 5 # Let the disk catch up.
+
+echo "==> unmapping encrypted partition"
+do_cmd cryptsetup luksClose $map
+
+echo "==> done."
