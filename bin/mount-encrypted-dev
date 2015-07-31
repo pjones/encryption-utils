@@ -1,0 +1,109 @@
+#!/bin/sh -eu
+
+################################################################################
+usage () {
+  echo "Usage: "`basename $0`" <device> <mount-point>"
+  echo "Mount encrypted device <device> at <mount-point>"
+  echo
+  echo "Usage: "`basename $0`" -u <mount-point>"
+  echo "Unmount encrypted device at <mount-point>"
+  echo
+  echo "Options:"
+  echo "  -u      Unmount instead of mount"
+  echo "  -G GID  Mount with group ID set to GID"
+  echo "  -U UID  Mount with user ID set to UID"
+  exit
+}
+
+################################################################################
+do_cmd () {
+  echo "$@"
+  "$@"
+}
+
+################################################################################
+if [ `id -u` != 0 ]; then
+  echo "ERROR: this operation requires you to be root."
+  exit 1
+fi
+
+################################################################################
+uid=""
+gid=""
+unmount="NO"
+
+while getopts "hg:u" o; do
+  case "${o}" in
+    u) unmount="YES"
+       ;;
+
+    G) gid="gid=$OPTARG"
+       ;;
+
+    U) uid="uid=$OPTARG"
+       ;;
+
+    h) usage
+       exit
+       ;;
+    *) echo "ERROR: bad option $o"
+       exit 1
+       ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+required_args=2
+[ $unmount = "YES" ] && required_args=1
+
+if [ $# -ne $required_args ]; then
+  echo "ERROR: wrong number of arguments, expected $required_args"
+  usage
+  exit 1
+fi
+
+################################################################################
+options=""
+
+if [ -n "$gid" -a -n "$uid" ]; then
+  options="-o${gid},${uid}"
+elif [ -n "$gid" ]; then
+  options="-o${gid}"
+elif [ -n "$uid" ]; then
+  options="-o${uid}"
+fi
+
+################################################################################
+if [ $unmount = "NO" ]; then
+  partition=${1}1
+  point=$2
+  map=`basename $partition`_crypt
+
+  if [ ! -b $partition ]; then
+    echo "ERROR: $partition is not a valid device"
+    exit 1
+  fi
+
+  if [ ! -d $point ]; then
+    echo "ERROR: $point is not a valid directory"
+    exit 1
+  fi
+
+  echo "==> mapping encrypted partition, enter disk password"
+  do_cmd cryptsetup luksOpen $partition $map
+
+  echo "==> mounting mapped device to $point"
+  do_cmd mount $options /dev/mapper/$map $point
+else
+  point=$1
+  map=`df $point|tail -1|cut -d' ' -f 1`
+
+  echo "==> unmounting mapped device"
+  do_cmd umount $point
+
+  echo "==> unmapping encrypted partition"
+  do_cmd cryptsetup luksClose $map
+fi
+
+echo "==> done."

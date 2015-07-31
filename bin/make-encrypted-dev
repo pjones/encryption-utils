@@ -2,7 +2,7 @@
 
 ################################################################################
 usage () {
-  echo "Usage:"`basename $0`:" <device>"
+  echo "Usage: "`basename $0`:" <device>"
   echo "Prepare <device> as an encrypted disk using LUKS"
   exit 1
 }
