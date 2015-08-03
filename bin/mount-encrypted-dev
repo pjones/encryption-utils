@@ -78,7 +78,7 @@ fi
 if [ $unmount = "NO" ]; then
   device=$1
   point=$2
-  map=`basename $partition`_crypt
+  map=`basename $device`_crypt
 
   if [ ! -b $device ]; then
     echo "ERROR: $device is not a valid device"
