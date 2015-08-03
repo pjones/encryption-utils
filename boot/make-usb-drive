@@ -1,0 +1,137 @@
+#!/bin/sh -eu
+
+################################################################################
+usage () {
+  echo "Usage: "`basename $0`" <device>"
+  exit 1
+}
+
+################################################################################
+do_cmd () {
+  echo "$@"
+  "$@"
+}
+
+################################################################################
+# Allow access to the other scripts.
+bin=`dirname $0`/../bin
+export PATH=$bin:$PATH
+
+################################################################################
+mount_point=$HOME/mnt
+
+while getopts "h" o; do
+  case "${o}" in
+    h) usage
+       exit
+       ;;
+
+    *) echo "ERROR: bad option $o"
+       exit 1
+       ;;
+  esac
+done
+
+shift $((OPTIND-1))
+mkdir -p $mount_point
+
+################################################################################
+if [ $# -ne 1 -o ! -b "${1:-/fake}" ]; then
+  echo "ERROR: missing or invalid device"
+  exit 1
+fi
+
+################################################################################
+device=$1
+nixpkgs=$HOME/develop/oss/nixpkgs
+config=modules/installer/cd-dvd/gpg-iso.nix
+
+################################################################################
+if [ ! -r $nixpkgs/nixos/$config ]; then
+  echo "ERROR: missing $config"
+  exit 1
+fi
+
+################################################################################
+echo "==> Preparing USB drive"
+do_cmd sudo make-encrypted-dev -b -d $device
+
+################################################################################
+echo "==> Building the NixOS ISO image"
+iso_dir=$nixpkgs/nixos/result/iso
+
+if [ ! -d $iso_dir ]; then
+
+  ( cd $nixpkgs/nixos
+    nix-build . -A config.system.build.isoImage -I nixos-config=$config
+  )
+
+fi
+
+iso=`ls $iso_dir/*.iso | head -1`
+
+if [ -z "$iso" -o ! -r "$iso" ]; then
+  echo "ERROR: nix-build didn't make ISO image!"
+  exit 1
+fi
+
+################################################################################
+echo "==> Extracting the init script from the ISO"
+do_cmd sudo mount -o loop -t iso9660 $iso $mount_point
+init=`egrep '^[[:space:]]*linux ' $mount_point/boot/grub/grub.cfg`
+echo "==> Found: $init"
+do_cmd sudo umount $mount_point
+
+################################################################################
+echo "==> Making USB drive bootable"
+do_cmd sudo mount ${device}1 $mount_point
+
+do_cmd sudo mkdir $mount_point/boot
+do_cmd sudo mkdir $mount_point/boot/iso
+
+do_cmd sudo grub-install --target=i386-pc --recheck \
+       --boot-directory=$mount_point/boot $device
+
+do_cmd sudo cp $iso $mount_point/boot/iso/nixos.iso
+
+################################################################################
+echo "==> Creating the Grub menu"
+
+update_nixos_linux_line () {
+  # Fix the linux init line in the grub.cfg:
+  sed -r -e 's/\/(boot|nix)/(loop)\/\1/g'
+}
+
+uuid=`blkid -oexport ${device}1 | egrep ^UUID | cut -d= -f2`
+tmpfile=`mktemp`
+init=`echo $init | update_nixos_linux_line`
+
+cat > $tmpfile <<EOF
+set imgdevpath="/dev/disk/by-uuid/$uuid"
+set default=0
+set timeout=10
+
+menuentry "NixOS ISO" {
+  loopback loop /boot/iso/nixos.iso
+  $init
+  initrd (loop)/boot/initrd
+}
+EOF
+
+do_cmd sudo cp $tmpfile $mount_point/boot/grub/grub.cfg
+rm -rf $tmpfile
+
+################################################################################
+echo "==> Copying over encryption scripts"
+do_cmd sudo mkdir $mount_point/bin
+
+for f in `find $bin -type f`; do
+  do_cmd sudo cp $f $mount_point/bin/`basename $f`
+done
+
+################################################################################
+echo "==> Unmounting boot image"
+do_cmd sudo umount $mount_point
+
+################################################################################
+echo "==> done."

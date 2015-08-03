@@ -4,6 +4,13 @@
 usage () {
   echo "Usage: "`basename $0`:" <device>"
   echo "Prepare <device> as an encrypted disk using LUKS"
+  echo
+  echo "Options:"
+  echo
+  echo "  -b     Make the new file system bootable on a BIOS"
+  echo "  -d     Create two partitions, encrypting the second"
+  echo "  -s MB  When using -d, first partition size is MB"
+  echo
   exit 1
 }
 
@@ -12,6 +19,34 @@ do_cmd () {
   echo "$@"
   "$@"
 }
+
+################################################################################
+bios=NO
+dual=NO
+size=2048
+
+while getopts "bdhs:" o; do
+  case "${o}" in
+    b) bios=YES
+       ;;
+
+    d) dual=YES
+       ;;
+
+    h) usage
+       exit
+       ;;
+
+    s) size=$OPTARG
+       ;;
+
+    *) echo "ERROR: bad option $o"
+       exit 1
+       ;;
+  esac
+done
+
+shift $((OPTIND-1))
 
 ################################################################################
 if [ `id -u` != 0 ]; then
@@ -26,7 +61,13 @@ fi
 
 ################################################################################
 device=$1
-partition=${device}1
+
+if [ $dual = "NO" ]; then
+  partition=${device}1
+else
+  partition=${device}2
+fi
+
 map=`basename $partition`_crypt
 
 read -p "Really destroy all data on $device? (y/n): " answer
@@ -34,7 +75,19 @@ read -p "Really destroy all data on $device? (y/n): " answer
 
 ################################################################################
 echo "==> creating partition table"
-do_cmd parted -s $device -- mklabel gpt mkpart primary ext4 1 -1
+label=gpt
+[ $bios = "YES" ] && label=msdos
+
+if [ $dual = "NO" ]; then
+  do_cmd parted -s $device -- \
+         mklabel $label \
+         mkpart primary ext4 1 -1
+else
+  do_cmd parted -s $device -- \
+         mklabel $label \
+         mkpart primary ext4 1 $size \
+         mkpart primary ext4 `expr $size + 1` -1
+fi
 
 echo "==> setting up encryption formatting, enter disk password"
 do_cmd cryptsetup -c aes -s 256 -h sha256 --batch-mode -y \
@@ -44,6 +97,7 @@ echo "==> mapping encrypted partition, enter disk password"
 do_cmd cryptsetup luksOpen $partition $map
 
 echo "==> creating file system on encrypted partition"
+[ $dual = "YES" ] && do_cmd mkfs.ext4 ${device}1
 do_cmd mkfs.ext4 /dev/mapper/$map
 do_cmd sleep 5 # Let the disk catch up.
 
