@@ -3,6 +3,14 @@
 ################################################################################
 usage () {
   echo "Usage: "`basename $0`" <device>"
+  echo "Create a bootable ISO with a encrypted second partition"
+  echo
+  echo "Options:"
+  echo
+  echo "  -m DIR   Use DIR as a temporary mount point"
+  echo "  -n DIR   Use nixpkgs from DIR"
+  echo "  -c FILE  Set nixos-config to FILE"
+  echo "  -u       Update the boot partition without rebuilding everything"
   exit 1
 }
 
@@ -18,12 +26,27 @@ bin=`dirname $0`/../bin
 export PATH=$bin:$PATH
 
 ################################################################################
+update=NO
 mount_point=$HOME/mnt
+nixpkgs=$HOME/develop/oss/nixpkgs
+config=modules/installer/cd-dvd/gpg-iso.nix
 
-while getopts "h" o; do
+while getopts "hum:n:c:" o; do
   case "${o}" in
     h) usage
        exit
+       ;;
+
+    c) config=$OPTARG
+       ;;
+
+    m) mount_point=$OPTARG
+       ;;
+
+    n) nixpkgs=$OPTARG
+       ;;
+
+    u) update=YES
        ;;
 
     *) echo "ERROR: bad option $o"
@@ -43,8 +66,6 @@ fi
 
 ################################################################################
 device=$1
-nixpkgs=$HOME/develop/oss/nixpkgs
-config=modules/installer/cd-dvd/gpg-iso.nix
 
 ################################################################################
 if [ ! -r $nixpkgs/nixos/$config ]; then
@@ -53,8 +74,13 @@ if [ ! -r $nixpkgs/nixos/$config ]; then
 fi
 
 ################################################################################
-echo "==> Preparing USB drive"
-do_cmd sudo make-encrypted-dev -b -d $device
+if [ $update = "NO" ]; then
+  echo "==> Preparing the USB drive"
+  do_cmd sudo make-encrypted-dev -b -d $device
+fi
+
+################################################################################
+echo "==> Setting disk labels"
 do_cmd sudo tune2fs -L ISOHOST ${device}1
 
 ################################################################################
@@ -86,9 +112,7 @@ do_cmd sudo umount $mount_point
 ################################################################################
 echo "==> Making USB drive bootable"
 do_cmd sudo mount ${device}1 $mount_point
-
-do_cmd sudo mkdir $mount_point/boot
-do_cmd sudo mkdir $mount_point/boot/iso
+do_cmd sudo mkdir -p $mount_point/boot/iso
 
 do_cmd sudo grub-install --target=i386-pc --recheck \
        --boot-directory=$mount_point/boot $device
@@ -100,7 +124,7 @@ echo "==> Creating the Grub menu"
 
 update_nixos_linux_line () {
   # Fix the linux init line in the grub.cfg:
-  sed -r -e 's/\/(boot|nix)/(loop)\/\1/g' \
+  sed -r -e 's/\/(boot)/(loop)\/\1/g' \
          -e 's/ root=[^ ]* / /'
 }
 
@@ -113,7 +137,7 @@ set imgdevpath="/dev/disk/by-uuid/$uuid"
 set default=0
 set timeout=10
 
-menuentry "NixOS ISO" {
+menuentry "NixOS ISO with GnuPG" {
   loopback loop /boot/iso/nixos.iso
   $init
   initrd (loop)/boot/initrd
@@ -125,7 +149,7 @@ rm -rf $tmpfile
 
 ################################################################################
 echo "==> Copying over encryption scripts"
-do_cmd sudo mkdir $mount_point/bin
+do_cmd sudo mkdir -p $mount_point/bin
 
 for f in `find $bin -type f`; do
   do_cmd sudo cp $f $mount_point/bin/`basename $f`

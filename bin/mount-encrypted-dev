@@ -76,12 +76,12 @@ fi
 
 ################################################################################
 if [ $unmount = "NO" ]; then
-  partition=${1}1
+  device=$1
   point=$2
   map=`basename $partition`_crypt
 
-  if [ ! -b $partition ]; then
-    echo "ERROR: $partition is not a valid device"
+  if [ ! -b $device ]; then
+    echo "ERROR: $device is not a valid device"
     exit 1
   fi
 
@@ -91,7 +91,7 @@ if [ $unmount = "NO" ]; then
   fi
 
   echo "==> mapping encrypted partition, enter disk password"
-  do_cmd cryptsetup luksOpen $partition $map
+  do_cmd cryptsetup luksOpen $device $map
 
   echo "==> mounting mapped device to $point"
   do_cmd mount $options /dev/mapper/$map $point
