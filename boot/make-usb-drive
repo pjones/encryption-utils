@@ -55,6 +55,7 @@ fi
 ################################################################################
 echo "==> Preparing USB drive"
 do_cmd sudo make-encrypted-dev -b -d $device
+do_cmd sudo tune2fs -L ISOHOST ${device}1
 
 ################################################################################
 echo "==> Building the NixOS ISO image"
@@ -99,7 +100,8 @@ echo "==> Creating the Grub menu"
 
 update_nixos_linux_line () {
   # Fix the linux init line in the grub.cfg:
-  sed -r -e 's/\/(boot|nix)/(loop)\/\1/g'
+  sed -r -e 's/\/(boot|nix)/(loop)\/\1/g' \
+         -e 's/ root=[^ ]* / /'
 }
 
 uuid=`blkid -oexport ${device}1 | egrep ^UUID | cut -d= -f2`
