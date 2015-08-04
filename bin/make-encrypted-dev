@@ -9,7 +9,9 @@ usage () {
   echo
   echo "  -b     Make the new file system bootable on a BIOS"
   echo "  -d     Create two partitions, encrypting the second"
+  echo "  -f     Specify that <device> is really an image file"
   echo "  -s MB  When using -d, first partition size is MB"
+  echo "         Or, when using -f set the size of the image file"
   echo
   exit 1
 }
@@ -24,10 +26,14 @@ do_cmd () {
 bios=NO
 dual=NO
 size=2048
+imgfile=NO
 
-while getopts "bdhs:" o; do
+while getopts "bfdhs:" o; do
   case "${o}" in
     b) bios=YES
+       ;;
+
+    f) imgfile=YES
        ;;
 
     d) dual=YES
@@ -54,54 +60,79 @@ if [ `id -u` != 0 ]; then
   exit 1
 fi
 
-if [ $# -ne 1 -o ! -b "$1" ]; then
+if [ $# -ne 1 ]; then
   usage
   exit 1
 fi
 
+if [ $imgfile = "NO" -a ! -b "$1" ]; then
+  echo "ERROR: $1 is not a block device"
+  exit 1
+fi
+
+if [ $imgfile = "YES" -a -r "$1" ]; then
+  echo "ERROR: $1 already exists"
+  exit 1
+fi
+
+################################################################################
+do_encrypt () {
+  encdevice=$1
+  map=`basename $encdevice`_crypt
+
+  echo "==> setting up encryption formatting, enter disk password"
+  do_cmd cryptsetup -c aes -s 256 -h sha256 --batch-mode -y \
+         luksFormat $encdevice
+
+  echo "==> mapping encrypted encdevice, enter disk password"
+  do_cmd cryptsetup luksOpen $encdevice $map
+
+  echo "==> creating file system on encrypted encdevice"
+  [ $dual = "YES" -a $imgfile = "NO" ] && do_cmd mkfs.ext4 ${device}1
+  do_cmd mkfs.ext4 /dev/mapper/$map
+  do_cmd sleep 5 # Let the disk catch up.
+
+  echo "==> unmapping encrypted encdevice"
+  do_cmd cryptsetup luksClose $map
+}
+
 ################################################################################
 device=$1
 
-if [ $dual = "NO" ]; then
-  partition=${device}1
-else
-  partition=${device}2
-fi
-
-map=`basename $partition`_crypt
-
-read -p "Really destroy all data on $device? (y/n): " answer
-[ "$answer" = "y" -o "$answer" = "Y" ] || exit
-
 ################################################################################
-echo "==> creating partition table"
-label=gpt
-[ $bios = "YES" ] && label=msdos
+if [ $imgfile = "NO" ]; then
+  read -p "Really destroy all data on $device? (y/n): " answer
+  [ "$answer" = "y" -o "$answer" = "Y" ] || exit
 
-if [ $dual = "NO" ]; then
-  do_cmd parted -s $device -- \
-         mklabel $label \
-         mkpart primary ext4 1 -1
+  if [ $dual = "NO" ]; then
+    partition=${device}1
+  else
+    partition=${device}2
+  fi
+
+  echo "==> creating partition table"
+  label=gpt
+  [ $bios = "YES" ] && label=msdos
+
+  if [ $dual = "NO" ]; then
+    do_cmd parted -s $device -- \
+           mklabel $label \
+           mkpart primary ext4 1 -1
+  else
+    do_cmd parted -s $device -- \
+           mklabel $label \
+           mkpart primary ext4 1 $size \
+           mkpart primary ext4 `expr $size + 1` -1
+  fi
+
+  do_encrypt $partition
 else
-  do_cmd parted -s $device -- \
-         mklabel $label \
-         mkpart primary ext4 1 $size \
-         mkpart primary ext4 `expr $size + 1` -1
+  loopback=`losetup -f`
+
+  do_cmd dd if=/dev/zero of=$device bs=1M count=$size
+  do_cmd losetup $loopback $device
+  do_encrypt $loopback
+  do_cmd losetup -d $loopback
 fi
-
-echo "==> setting up encryption formatting, enter disk password"
-do_cmd cryptsetup -c aes -s 256 -h sha256 --batch-mode -y \
-           luksFormat $partition
-
-echo "==> mapping encrypted partition, enter disk password"
-do_cmd cryptsetup luksOpen $partition $map
-
-echo "==> creating file system on encrypted partition"
-[ $dual = "YES" ] && do_cmd mkfs.ext4 ${device}1
-do_cmd mkfs.ext4 /dev/mapper/$map
-do_cmd sleep 5 # Let the disk catch up.
-
-echo "==> unmapping encrypted partition"
-do_cmd cryptsetup luksClose $map
 
 echo "==> done."

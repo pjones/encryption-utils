@@ -32,7 +32,7 @@ uid=""
 gid=""
 unmount="NO"
 
-while getopts "hg:u" o; do
+while getopts "hG:U:u" o; do
   case "${o}" in
     u) unmount="YES"
        ;;
@@ -75,12 +75,23 @@ elif [ -n "$uid" ]; then
 fi
 
 ################################################################################
+do_mount () {
+  encdevice=$1
+  map=`basename $encdevice`_crypt
+
+  echo "==> mapping encrypted partition, enter disk password"
+  do_cmd cryptsetup luksOpen $encdevice $map
+
+  echo "==> mounting mapped encdevice to $point"
+  do_cmd mount $options /dev/mapper/$map $point
+}
+
+################################################################################
 if [ $unmount = "NO" ]; then
   device=$1
   point=$2
-  map=`basename $device`_crypt
 
-  if [ ! -b $device ]; then
+  if [ ! -b $device -a ! -r $device ]; then
     echo "ERROR: $device is not a valid device"
     exit 1
   fi
@@ -90,11 +101,13 @@ if [ $unmount = "NO" ]; then
     exit 1
   fi
 
-  echo "==> mapping encrypted partition, enter disk password"
-  do_cmd cryptsetup luksOpen $device $map
-
-  echo "==> mounting mapped device to $point"
-  do_cmd mount $options /dev/mapper/$map $point
+  if [ ! -b $device ]; then
+    loopback=`losetup -f`
+    do_cmd losetup $loopback $device
+    do_mount $loopback
+  else
+    do_mount $device
+  fi
 else
   point=$1
   map=`df $point|tail -1|cut -d' ' -f 1`
@@ -104,6 +117,11 @@ else
 
   echo "==> unmapping encrypted partition"
   do_cmd cryptsetup luksClose $map
+
+  if basename $map | egrep -q '^loop[0-9]+_'; then
+    loopback=/dev/`basename $map | sed -r -e 's/_.*$//'`
+    do_cmd losetup -d $loopback
+  fi
 fi
 
 echo "==> done."
