@@ -6,7 +6,7 @@ BIN_DIR               = $(HOME)/bin
 INSTALL_CONFIG_FILES ?= NO
 
 ################################################################################
-GPG_FILES = etc/gpg.conf etc/scdaemon.conf
+GPG_FILES = etc/gpg.conf etc/gpg-agent.conf etc/scdaemon.conf
 GPG_DEST  = ~/.gnupg
 
 ################################################################################
