@@ -2,13 +2,14 @@
 
 ################################################################################
 usage () {
-  echo "Usage: "`basename $0`:" <device>"
+  echo "Usage:" $(basename "$0") ": <device>"
   echo "Prepare <device> as an encrypted disk using LUKS"
   echo
   echo "Options:"
   echo
   echo "  -b     Make the new file system bootable on a BIOS"
   echo "  -d     Create two partitions, encrypting the second"
+  echo "  -e     Directly encrypt <device> without partitioning"
   echo "  -f     Specify that <device> is really an image file"
   echo "  -s MB  When using -d, first partition size is MB"
   echo "         Or, when using -f set the size of the image file"
@@ -27,16 +28,20 @@ bios=NO
 dual=NO
 size=2048
 imgfile=NO
+partition=YES
 
-while getopts "bfdhs:" o; do
+while getopts "befdhs:" o; do
   case "${o}" in
     b) bios=YES
        ;;
 
-    f) imgfile=YES
+    d) dual=YES
        ;;
 
-    d) dual=YES
+    e) partition=NO
+       ;;
+
+    f) imgfile=YES
        ;;
 
     h) usage
@@ -104,28 +109,32 @@ if [ $imgfile = "NO" ]; then
   read -p "Really destroy all data on $device? (y/n): " answer
   [ "$answer" = "y" -o "$answer" = "Y" ] || exit
 
-  if [ $dual = "NO" ]; then
-    partition=${device}1
+  if [ $dual = "NO" ] && [ "$partition" = "YES" ]; then
+    full_device=${device}1
+  elif [ "$partition" = "NO" ]; then
+    full_device=$device
   else
-    partition=${device}2
+    full_device=${device}2
   fi
 
-  echo "==> creating partition table"
-  label=gpt
-  [ $bios = "YES" ] && label=msdos
+  if [ "$partition" = "YES" ]; then
+    echo "==> creating partition table"
+    label=gpt
+    [ $bios = "YES" ] && label=msdos
 
-  if [ $dual = "NO" ]; then
-    do_cmd parted -s $device -- \
-           mklabel $label \
-           mkpart primary ext4 1 -1
-  else
-    do_cmd parted -s $device -- \
-           mklabel $label \
-           mkpart primary ext4 1 $size \
-           mkpart primary ext4 `expr $size + 1` -1
+    if [ $dual = "NO" ]; then
+      do_cmd parted -s $device -- \
+             mklabel $label \
+             mkpart primary ext4 0% 100%
+    else
+      do_cmd parted -s $device -- \
+             mklabel $label \
+             mkpart primary ext4 0% $size \
+             mkpart primary ext4 `expr $size + 1` 100%
+    fi
   fi
 
-  do_encrypt $partition
+  do_encrypt "$full_device"
 else
   loopback=`losetup -f`
 
