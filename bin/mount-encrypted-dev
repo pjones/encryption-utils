@@ -2,17 +2,19 @@
 
 ################################################################################
 usage () {
-  echo "Usage: "`basename $0`" <device> <mount-point>"
-  echo "Mount encrypted device <device> at <mount-point>"
-  echo
-  echo "Usage: "`basename $0`" -u <mount-point>"
-  echo "Unmount encrypted device at <mount-point>"
-  echo
-  echo "Options:"
-  echo "  -u      Unmount instead of mount"
-  echo "  -G GID  Mount with group ID set to GID"
-  echo "  -U UID  Mount with user ID set to UID"
-  exit
+cat <<EOF
+Usage: $(basename "$0") [options] <device> <mount-point>
+Mount encrypted device <device> at <mount-point>
+
+Usage: $(basename "$0") -u <mount-point>
+Unmount encrypted device at <mount-point>
+
+Options:
+  -u      Unmount instead of mount
+  -r      Mount read-only
+  -G GID  Mount with group ID set to GID
+  -U UID  Mount with user ID set to UID
+EOF
 }
 
 ################################################################################
@@ -22,38 +24,87 @@ do_cmd () {
 }
 
 ################################################################################
-if [ `id -u` != 0 ]; then
-  echo "ERROR: this operation requires you to be root."
-  exit 1
-fi
+do_mount () {
+  encdevice=$1
+  options=""
+  map="$(basename "$encdevice")_crypt"
+
+  if [ -n "$mount_options" ]; then
+    options="-o$mount_options"
+  fi
+
+  echo "==> mapping encrypted partition, enter disk password"
+  do_cmd cryptsetup luksOpen "$encdevice" "$map"
+
+  echo "==> mounting mapped encdevice to $point"
+  do_cmd mount "${options:--orw}" "/dev/mapper/$map" "$point"
+}
 
 ################################################################################
-uid=""
-gid=""
+do_umount() {
+  point=$1
+  map=$(df "$point" | tail -1 | cut -d' ' -f 1)
+
+  echo "==> unmounting mapped device"
+  do_cmd umount "$point"
+
+  echo "==> unmapping encrypted partition"
+  do_cmd cryptsetup luksClose "$map"
+
+  if basename "$map" | grep -Eq '^loop[0-9]+_'; then
+    loopback=/dev/$(basename "$map" | sed -r -e 's/_.*$//')
+    do_cmd losetup -d "$loopback"
+  fi
+}
+
+################################################################################
+append_mount_option() {
+  if [ "$mount_option_count" -gt 0 ]; then
+    mount_options="${mount_options},"
+  fi
+
+  mount_option_count=$(("$mount_option_count" + 1))
+  mount_options="${mount_options}${1}"
+}
+
+################################################################################
+mount_options=""
+mount_option_count=0
 unmount="NO"
 
-while getopts "hG:U:u" o; do
+################################################################################
+while getopts "hG:U:ru" o; do
   case "${o}" in
     u) unmount="YES"
        ;;
 
-    G) gid="gid=$OPTARG"
+    G) append_mount_option "gid=$OPTARG"
        ;;
 
-    U) uid="uid=$OPTARG"
+    r) append_mount_option "ro"
+       ;;
+
+    U) append_mount_option "uid=$OPTARG"
        ;;
 
     h) usage
        exit
        ;;
-    *) echo "ERROR: bad option $o"
-       exit 1
+
+    *) exit 1
        ;;
   esac
 done
 
 shift $((OPTIND-1))
 
+################################################################################
+if [ "$(id -u)" != 0 ]; then
+  echo "ERROR: this operation requires you to be root."
+  exit 1
+fi
+
+################################################################################
 required_args=2
 [ $unmount = "YES" ] && required_args=1
 
@@ -64,64 +115,29 @@ if [ $# -ne $required_args ]; then
 fi
 
 ################################################################################
-options=""
-
-if [ -n "$gid" -a -n "$uid" ]; then
-  options="-o${gid},${uid}"
-elif [ -n "$gid" ]; then
-  options="-o${gid}"
-elif [ -n "$uid" ]; then
-  options="-o${uid}"
-fi
-
-################################################################################
-do_mount () {
-  encdevice=$1
-  map=`basename $encdevice`_crypt
-
-  echo "==> mapping encrypted partition, enter disk password"
-  do_cmd cryptsetup luksOpen $encdevice $map
-
-  echo "==> mounting mapped encdevice to $point"
-  do_cmd mount $options /dev/mapper/$map $point
-}
-
-################################################################################
 if [ $unmount = "NO" ]; then
   device=$1
   point=$2
 
-  if [ ! -b $device -a ! -r $device ]; then
+  if [ ! -b "$device" ] && [ ! -r "$device" ]; then
     echo "ERROR: $device is not a valid device"
     exit 1
   fi
 
-  if [ ! -d $point ]; then
+  if [ ! -d "$point" ]; then
     echo "ERROR: $point is not a valid directory"
     exit 1
   fi
 
-  if [ ! -b $device ]; then
-    loopback=`losetup -f`
-    do_cmd losetup $loopback $device
-    do_mount $loopback
+  if [ ! -b "$device" ]; then
+    loopback=$(losetup -f)
+    do_cmd losetup "$loopback" "$device"
+    do_mount "$loopback"
   else
-    do_mount $device
+    do_mount "$device"
   fi
 else
-  point=$1
-  map=`df $point|tail -1|cut -d' ' -f 1`
-
-  echo "==> unmounting mapped device"
-  do_cmd umount $point
-
-  echo "==> unmapping encrypted partition"
-  do_cmd cryptsetup luksClose $map
-
-  if basename $map | egrep -q '^loop[0-9]+_'; then
-    loopback=/dev/`basename $map | sed -r -e 's/_.*$//'`
-    do_cmd losetup -d $loopback
-  fi
+  do_umount "$1"
 fi
 
 echo "==> done."
