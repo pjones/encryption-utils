@@ -8,6 +8,8 @@ these tasks (e.g., creating new OpenPGP keys).
 
   * [Creating a New OpenPGP Master Key](doc/new-master-pgp-key.md)
 
+  * [Extending the Expiration Date for GPG Subkeys](doc/extend-subkey-expiration-date.md)
+
   * [Building an Offline USB Drive](doc/offline-usb-drive.md)
 
 ## Utilities
