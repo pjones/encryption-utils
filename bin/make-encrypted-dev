@@ -2,19 +2,23 @@
 
 ################################################################################
 usage () {
-  echo "Usage:" $(basename "$0") ": <device>"
-  echo "Prepare <device> as an encrypted disk using LUKS"
-  echo
-  echo "Options:"
-  echo
-  echo "  -b     Make the new file system bootable on a BIOS"
-  echo "  -d     Create two partitions, encrypting the second"
-  echo "  -e     Directly encrypt <device> without partitioning"
-  echo "  -f     Specify that <device> is really an image file"
-  echo "  -s MB  When using -d, first partition size is MB"
-  echo "         Or, when using -f set the size of the image file"
-  echo
-  exit 1
+cat <<EOF
+Usage: $(basename "$0") [option] <device>
+
+Prepare <device> as an encrypted disk using LUKS
+
+Options:
+
+  -b     Make the new file system bootable on a BIOS
+  -c DIR Clone directory DIR as an encrypted image file
+  -d     Create two partitions, encrypting the second
+  -e     Directly encrypt <device> without partitioning
+  -f     Specify that <device> is really an image file
+
+  -s MB  When using -d, first partition size is MB
+         When using -c, add MB padding to the image file
+         When using -f, set the size of the image file
+EOF
 }
 
 ################################################################################
@@ -29,10 +33,20 @@ dual=NO
 size=2048
 imgfile=NO
 partition=YES
+clone=""
 
-while getopts "befdhs:" o; do
+while getopts "bc:efdhs:" o; do
   case "${o}" in
     b) bios=YES
+       ;;
+
+    c) clone="$OPTARG"
+       imgfile=YES
+
+       if [ ! -d "$clone" ]; then
+         echo "directory to clone doesn't exist: $clone"
+         exit 1
+       fi
        ;;
 
     d) dual=YES
@@ -48,7 +62,7 @@ while getopts "befdhs:" o; do
        exit
        ;;
 
-    s) size=$OPTARG
+    s) size="$OPTARG"
        ;;
 
     *) echo "ERROR: bad option $o"
@@ -60,7 +74,7 @@ done
 shift $((OPTIND-1))
 
 ################################################################################
-if [ `id -u` != 0 ]; then
+if [ "$(id -u)" != 0 ]; then
   echo "ERROR: this operation requires you to be root."
   exit 1
 fi
@@ -70,78 +84,112 @@ if [ $# -ne 1 ]; then
   exit 1
 fi
 
-if [ $imgfile = "NO" -a ! -b "$1" ]; then
+if [ "$imgfile" = "NO" ] && [ ! -b "$1" ]; then
   echo "ERROR: $1 is not a block device"
   exit 1
 fi
 
-if [ $imgfile = "YES" -a -r "$1" ]; then
+if [ "$imgfile" = "YES" ] && [ -r "$1" ]; then
   echo "ERROR: $1 already exists"
   exit 1
 fi
 
 ################################################################################
-do_encrypt () {
-  encdevice=$1
-  map=`basename $encdevice`_crypt
-
-  echo "==> setting up encryption formatting, enter disk password"
-  do_cmd cryptsetup -c aes -s 256 -h sha256 --batch-mode -y \
-         luksFormat $encdevice
-
-  echo "==> mapping encrypted encdevice, enter disk password"
-  do_cmd cryptsetup luksOpen $encdevice $map
-
-  echo "==> creating file system on encrypted encdevice"
-  [ $dual = "YES" -a $imgfile = "NO" ] && do_cmd mkfs.ext4 ${device}1
-  do_cmd mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 /dev/mapper/$map
-  do_cmd sleep 5 # Let the disk catch up.
-
-  echo "==> unmapping encrypted encdevice"
-  do_cmd cryptsetup luksClose $map
-}
-
-################################################################################
 device=$1
 
 ################################################################################
-if [ $imgfile = "NO" ]; then
-  read -p "Really destroy all data on $device? (y/n): " answer
-  [ "$answer" = "y" -o "$answer" = "Y" ] || exit
+do_partition() {
+  printf "%s" "Really destroy all data on $device? (y/n): "
+  read -r answer
+  [ "$answer" = "y" ] || [ "$answer" = "Y" ] || exit
 
-  if [ $dual = "NO" ] && [ "$partition" = "YES" ]; then
-    full_device=${device}1
+  if [ "$dual" = "NO" ] && [ "$partition" = "YES" ]; then
+    full_device="${device}1"
   elif [ "$partition" = "NO" ]; then
-    full_device=$device
+    full_device="$device"
   else
-    full_device=${device}2
+    full_device="${device}2"
   fi
 
   if [ "$partition" = "YES" ]; then
     echo "==> creating partition table"
     label=gpt
-    [ $bios = "YES" ] && label=msdos
+    [ "$bios" = "YES" ] && label=msdos
 
-    if [ $dual = "NO" ]; then
-      do_cmd parted -s $device -- \
-             mklabel $label \
+    if [ "$dual" = "NO" ]; then
+      do_cmd parted -s "$device" -- \
+             mklabel "$label" \
              mkpart primary ext4 0% 100%
     else
-      do_cmd parted -s $device -- \
-             mklabel $label \
-             mkpart primary ext4 0% $size \
-             mkpart primary ext4 `expr $size + 1` 100%
+      do_cmd parted -s "$device" -- \
+             mklabel "$label" \
+             mkpart primary ext4 0% "$size"MB \
+             mkpart primary ext4 $(("$size" + 1))MB 100%
     fi
   fi
 
   do_encrypt "$full_device"
-else
-  loopback=`losetup -f`
+}
 
-  do_cmd dd if=/dev/zero of=$device bs=1M count=$size
-  do_cmd losetup $loopback $device
-  do_encrypt $loopback
-  do_cmd losetup -d $loopback
+################################################################################
+do_make_image_file() {
+  # Work with bytes since we are limited to integer arithmetic when
+  # using the shell's ((expr)) syntax.
+  if [ -n "$clone" ]; then
+    padding=$(("$size" * 1024 * 1024))
+    origin_size=$(du --count-links --bytes --dereference-args "$clone" | cut -f 1)
+    bytes=$(("$origin_size" + "$padding"))
+  else
+    bytes=$(("$size" * 1024 * 1024))
+  fi
+
+  loopback=$(losetup -f)
+  do_cmd dd if=/dev/zero of="$device" ibs=1M obs=1M bs=1c count="$bytes"
+  do_cmd losetup "$loopback" "$device"
+  do_encrypt "$loopback"
+  do_cmd losetup -d "$loopback"
+}
+
+################################################################################
+do_encrypt() {
+  encdevice=$1
+  map="$(basename "$encdevice")_crypt"
+
+  echo "==> setting up encryption formatting, enter disk password"
+  do_cmd cryptsetup -c aes -s 256 -h sha256 --batch-mode -y \
+         luksFormat "$encdevice"
+
+  echo "==> mapping encrypted encdevice, enter disk password"
+  do_cmd cryptsetup luksOpen "$encdevice" "$map"
+
+  echo "==> creating file system on encrypted encdevice"
+  [ "$dual" = "YES" ] && [ "$imgfile" = "NO" ] && do_cmd mkfs.ext4 "${device}1"
+  do_cmd mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 "/dev/mapper/$map"
+  do_cmd sleep 5 # Let the disk catch up.
+
+  if [ -n "$clone" ]; then
+    echo "==> cloning $clone"
+    point=$(mktemp --directory)
+    do_cmd mount "/dev/mapper/$map" "$point"
+    echo "tar ... | tar ..."
+    tar -C "$clone" --hard-dereference -cf - . | tar -C "$point" -xvf -
+    do_cmd umount "$point"
+    do_cmd rmdir "$point"
+  fi
+
+  echo "==> unmapping encrypted encdevice"
+  do_cmd cryptsetup luksClose "$map"
+}
+
+################################################################################
+if [ "$imgfile" = "NO" ]; then
+  do_partition
+elif [ "$imgfile" = "YES" ]; then
+  do_make_image_file
+else
+  echo "Well, this is embarrassing, this should never happen."
+  exit 1
 fi
 
+################################################################################
 echo "==> done."
