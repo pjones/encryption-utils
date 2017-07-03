@@ -30,7 +30,7 @@ do_cmd () {
 ################################################################################
 bios=NO
 dual=NO
-size=2048
+size=""
 imgfile=NO
 partition=YES
 clone=""
@@ -42,6 +42,7 @@ while getopts "bc:efdhs:" o; do
 
     c) clone="$OPTARG"
        imgfile=YES
+       [ -z "$size" ] && size=8
 
        if [ ! -d "$clone" ]; then
          echo "directory to clone doesn't exist: $clone"
@@ -56,6 +57,7 @@ while getopts "bc:efdhs:" o; do
        ;;
 
     f) imgfile=YES
+       [ -z "$size" ] && size=2048
        ;;
 
     h) usage
@@ -72,6 +74,7 @@ while getopts "bc:efdhs:" o; do
 done
 
 shift $((OPTIND-1))
+[ -z "$size" ] && size=2048
 
 ################################################################################
 if [ "$(id -u)" != 0 ]; then
@@ -137,7 +140,7 @@ do_make_image_file() {
   # using the shell's ((expr)) syntax.
   if [ -n "$clone" ]; then
     padding=$(("$size" * 1024 * 1024))
-    origin_size=$(du --count-links --bytes --dereference-args "$clone" | cut -f 1)
+    origin_size=$(du --summarize --count-links --bytes --dereference-args "$clone" | cut -f 1)
     bytes=$(("$origin_size" + "$padding"))
   else
     bytes=$(("$size" * 1024 * 1024))
