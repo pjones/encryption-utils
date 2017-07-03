@@ -115,15 +115,25 @@ following:
      - The key sizes need to be `2048`
      - Set the keys to expire in 2 years
 
-  #. Backup your subkeys
+  #. **Backup your subkeys**
 
      Transferring the subkeys to a smartcard is a destructive
      operation.  Make sure you backup your keys and entire `GNUPGHOME`
      before continuing.
 
         $ mkdir -p $GNUPGHOME/../backup
+        $ tar -C $GNUPGHOME/.. -czf $GNUPGHOME/../backup/$(date +%Y-%m-%d).tar.gz $(basename $GNUPGHOME)
         $ gpg2 -a --export-secret-subkeys <keyID> > $GNUPGHOME/../backup/subkeys.txt
-        $ tar -C $GNUPGHOME/.. -czf $GNUPGHOME/../backup/gnupg-backup.tar.gz `basename $GNUPGHOME`
+
+     **NOTE:** According to the `gpg2` man page, using the
+     `--export-secret-subkeys` command will take your private subkeys
+     offline (i.e. remove them from `$GNUPGHOME`).  Another really
+     good reason to have these backups.
+
+     When listing your subkeys, if the key type of `ssb` has a hash
+     symbol (`#`) after it, the key is offline.  You can either import
+     you keys from the `subkeys.txt` backup file or restore the
+     tarball.
 
 ## Transferring Subkeys to a Yubikey
 
@@ -162,8 +172,9 @@ following:
 
   #. Confirm the keyring no longer has the secret subkeys
 
-     When listing the keys, the subkeys should be listed as `ssb>` to
-     indicate they are not present.
+     When listing the keys, the subkeys should be listed with a
+     greater than symbol after the key type (i.e. `ssb>`) to indicate
+     they are not present.
 
         $ gpg --list-secret-keys <keyID>
 
@@ -188,6 +199,14 @@ following:
 
         gpg> trust
         gpg> quit
+
+(Consider uploading your key to a key server with `gpg2 --send-keys <KEY-ID>`.)
+
+## Make Backups
+
+Please, for the love of everything that is holy, clone your USB drive,
+and make sure you have copies of your private subkeys somewhere safe
+and secure.
 
 ## References
 
