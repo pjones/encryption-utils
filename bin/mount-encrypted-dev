@@ -1,4 +1,8 @@
-#!/bin/sh -eu
+#!/bin/bash
+
+################################################################################
+set -e
+set -u
 
 ################################################################################
 usage () {
@@ -10,6 +14,7 @@ Usage: $(basename "$0") -u <mount-point>
 Unmount encrypted device at <mount-point>
 
 Options:
+  -k FILE Read key from FILE
   -u      Unmount instead of mount
   -r      Mount read-only
   -G GID  Mount with group ID set to GID
@@ -28,13 +33,18 @@ do_mount () {
   encdevice=$1
   options=""
   map="$(basename "$encdevice")_crypt"
+  cryptsetup_flags=()
+
+  if [ -n "$keyfile" ] && [ -e "$keyfile" ]; then
+    cryptsetup_flags+=("--key-file" "$keyfile")
+  fi
 
   if [ -n "$mount_options" ]; then
     options="-o$mount_options"
   fi
 
   echo "==> mapping encrypted partition, enter disk password"
-  do_cmd cryptsetup luksOpen "$encdevice" "$map"
+  do_cmd cryptsetup "${cryptsetup_flags[@]}" luksOpen "$encdevice" "$map"
 
   echo "==> mounting mapped encdevice to $point"
   do_cmd mount "${options:--orw}" "/dev/mapper/$map" "$point"
@@ -71,10 +81,14 @@ append_mount_option() {
 mount_options=""
 mount_option_count=0
 unmount="NO"
+keyfile=""
 
 ################################################################################
-while getopts "hG:U:ru" o; do
+while getopts "hk:G:U:ru" o; do
   case "${o}" in
+    k) keyfile="$OPTARG"
+       ;;
+
     u) unmount="YES"
        ;;
 
