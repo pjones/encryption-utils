@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+
+################################################################################
+set -eu
+set -o pipefail
+
+################################################################################
+option_key_file=
+option_pass_name=
+option_size=0
+
+################################################################################
+tmp_keyfile=
+
+################################################################################
+# Ensure any temporary files are cleaned up.
+cleanup() {
+  if [ -n "$tmp_keyfile" ] && [ -e "$tmp_keyfile" ]; then
+    rm "$tmp_keyfile"
+  fi
+}
+trap cleanup EXIT
+
+################################################################################
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options] file
+
+Create a new encrypted disk image that can be used with the
+mount-encrypted-dev tool.
+
+Options:
+
+  -h       This message
+  -b NUM   The size of the new image, in MB
+  -k FILE  File to read the password from
+  -p NAME  Read a password via pass(1) giving it NAME
+
+Example:
+
+  $(basename "$0") -p images/foobar -b 1024 disk.img
+
+EOF
+}
+
+################################################################################
+# Read password on standard output if requested.
+prepare_password() {
+  if [ -n "$option_key_file" ]; then
+    if [ "$option_key_file" = "-" ]; then
+      tmp_keyfile=$(mktemp --tmpdir=/dev/shm keyfile.XXXXXXXXXX)
+      cat >"$tmp_keyfile"
+      option_key_file=$tmp_keyfile
+    fi
+  fi
+}
+
+################################################################################
+# Write the image password to standard output.
+password_to_stdout() {
+  if [ -n "$option_key_file" ]; then
+    cat "$option_key_file"
+  elif [ -n "$option_pass_name" ]; then
+    pass "$option_pass_name" | head -1
+  fi
+}
+
+################################################################################
+# Run a command using sudo if necessary.
+sudo_() {
+  if [ "$(id -u)" -ne 0 ]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+################################################################################
+# Run cryptsetup with proper flags for the key file.
+cryptsetup_() {
+  local flags=("--batch-mode")
+
+  if [ -n "$option_key_file" ] || [ -n "$option_pass_name" ]; then
+    flags+=("--key-file" "-")
+    password_to_stdout |
+      sudo cryptsetup "${flags[@]}" "$@"
+  else
+    flags+=("-y")
+    sudo cryptsetup "${flags[@]}" "$@"
+  fi
+}
+
+################################################################################
+# Generate the disk image.
+make_new_disk_image() {
+  local image_file=$1
+
+  local device_name
+  device_name=$(basename "$image_file")_crypt
+
+  echo "Writing zeros to $image_file"
+  dd if=/dev/zero of="$image_file" bs=1M count="$option_size"
+
+  loopback=$(losetup -f)
+  losetup "$loopback" "$image_file"
+
+  echo "Setting up LUKS device: $loopback"
+  cryptsetup_ luksFormat "$loopback"
+  cryptsetup_ open "$loopback" "$device_name"
+  sudo chown "$USER" /dev/mapper/"$device_name"
+
+  echo "Formatting disk image"
+  mkfs.ext4 \
+    -E lazy_itable_init=0,lazy_journal_init=0 \
+    "/dev/mapper/$device_name"
+  sync
+
+  echo "Cleaning up..."
+  sudo cryptsetup close "$device_name"
+  losetup -d "$loopback"
+
+  echo "$image_file"
+}
+
+################################################################################
+main() {
+  local image_file
+
+  while getopts "hb:k:p:" o; do
+    case "${o}" in
+    h)
+      usage
+      exit
+      ;;
+
+    b)
+      option_size=$OPTARG
+      ;;
+
+    k)
+      option_key_file=$OPTARG
+      ;;
+
+    p)
+      option_pass_name=$OPTARG
+      ;;
+
+    *)
+      exit 1
+      ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  if [ "$option_size" -le 0 ]; then
+    echo >&2 "ERROR: size not given, use -b"
+    exit 1
+  fi
+
+  if [ $# -ne 1 ]; then
+    echo >&2 "ERROR: provide exactly one image file name"
+    exit 1
+  fi
+
+  image_file=$1
+
+  if [ -e "$image_file" ]; then
+    echo >&2 "ERROR: file already exists: $image_file"
+    exit 1
+  fi
+
+  if [ ! -w /dev/loop-control ]; then
+    echo >&2 "ERROR: you don't have permission to use losetup!"
+    exit 1
+  fi
+
+  umask 077
+  prepare_password
+  make_new_disk_image "$image_file"
+}
+
+################################################################################
+main "$@"
