@@ -1,12 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ################################################################################
-set -e
-set -u
+set -eu
+set -o pipefail
 
 ################################################################################
-usage () {
-cat <<EOF
+usage() {
+  cat <<EOF
 Usage: $(basename "$0") [options] <device> <mount-point>
 Mount encrypted device <device> at <mount-point>
 
@@ -14,144 +14,152 @@ Usage: $(basename "$0") -u <mount-point>
 Unmount encrypted device at <mount-point>
 
 Options:
-  -k FILE Read key from FILE
-  -u      Unmount instead of mount
-  -r      Mount read-only
-  -G GID  Mount with group ID set to GID
-  -U UID  Mount with user ID set to UID
+  -k FILE  Read key from FILE
+  -p NAME  Read a password via 'pass show NAME'
+  -u       Unmount instead of mount
+  -r       Mount read-only
+  -G GID   Mount with group ID set to GID
+  -U UID   Mount with user ID set to UID
 EOF
 }
 
 ################################################################################
-do_cmd () {
-  echo "$@"
-  "$@"
-}
+options_for_mount=()
+option_unmount=0
+option_key_file=
+option_pass_name=
 
 ################################################################################
-do_mount () {
-  encdevice=$1
-  options=""
-  map="$(basename "$encdevice")_crypt"
-  cryptsetup_flags=()
+option_device=
+option_mount_point=
 
-  if [ -n "$keyfile" ] && [ -e "$keyfile" ]; then
-    cryptsetup_flags+=("--key-file" "$keyfile")
+################################################################################
+# shellcheck source=../lib/encryption-utils.sh
+. "$(dirname "$0")/../lib/encryption-utils.sh"
+
+################################################################################
+do_mount() {
+  local device=$1
+  local point=$2
+  local options=()
+
+  local crypt_device
+  crypt_device="$(make_crypt_device_name "$device")"
+
+  if [ "${#options_for_mount[@]}" -gt 0 ]; then
+    options+=("-o$(join_array_with ',' "${options_for_mount[@]}")")
   fi
 
-  if [ -n "$mount_options" ]; then
-    options="-o$mount_options"
-  fi
-
-  echo "==> mapping encrypted partition, enter disk password"
-  do_cmd cryptsetup "${cryptsetup_flags[@]}" luksOpen "$encdevice" "$map"
-
-  echo "==> mounting mapped encdevice to $point"
-  do_cmd mount "${options:--orw}" "/dev/mapper/$map" "$point"
+  cryptsetup_ open "$device" "$crypt_device"
+  sudo_ mount "${options[@]}" "/dev/mapper/$crypt_device" "$point"
 }
 
 ################################################################################
 do_umount() {
-  point=$1
-  map=$(df "$point" | tail -1 | cut -d' ' -f 1)
+  local point=$1
+  local crypt_device
 
-  echo "==> unmounting mapped device"
-  do_cmd umount "$point"
+  crypt_device=$(
+    df "$point" |
+      tail -1 |
+      cut -d' ' -f 1
+  )
 
-  echo "==> unmapping encrypted partition"
-  do_cmd cryptsetup luksClose "$map"
+  sudo_ umount "$point"
+  sudo_ cryptsetup close "$crypt_device"
 
-  if basename "$map" | grep -Eq '^loop[0-9]+_'; then
-    loopback=/dev/$(basename "$map" | sed -r -e 's/_.*$//')
-    do_cmd losetup -d "$loopback"
+  if basename "$crypt_device" | grep -Eq '^loop[0-9]+_'; then
+    loopback="/dev/$(basename "$crypt_device" | sed -E -e 's/_.*$//')"
+    sudo_ losetup -d "$loopback"
   fi
 }
 
 ################################################################################
-append_mount_option() {
-  if [ "$mount_option_count" -gt 0 ]; then
-    mount_options="${mount_options},"
-  fi
+parse_command_line() {
+  while getopts "hk:G:U:ruk:p:" o; do
+    case "${o}" in
+    u)
+      option_unmount=1
+      ;;
 
-  mount_option_count=$(("$mount_option_count" + 1))
-  mount_options="${mount_options}${1}"
-}
+    G)
+      options_for_mount+=("gid=$OPTARG")
+      ;;
 
-################################################################################
-mount_options=""
-mount_option_count=0
-unmount="NO"
-keyfile=""
+    r)
+      options_for_mount+=("ro")
+      ;;
 
-################################################################################
-while getopts "hk:G:U:ru" o; do
-  case "${o}" in
-    k) keyfile="$OPTARG"
-       ;;
+    U)
+      options_for_mount+=("uid=$OPTARG")
+      ;;
 
-    u) unmount="YES"
-       ;;
+    h)
+      usage
+      exit
+      ;;
 
-    G) append_mount_option "gid=$OPTARG"
-       ;;
+    k)
+      option_key_file=$OPTARG
+      ;;
 
-    r) append_mount_option "ro"
-       ;;
+    p)
+      option_pass_name=$OPTARG
+      ;;
 
-    U) append_mount_option "uid=$OPTARG"
-       ;;
+    *)
+      exit 1
+      ;;
+    esac
+  done
 
-    h) usage
-       exit
-       ;;
+  shift $((OPTIND - 1))
 
-    *) exit 1
-       ;;
-  esac
-done
-
-shift $((OPTIND-1))
-
-################################################################################
-if [ "$(id -u)" != 0 ]; then
-  echo "ERROR: this operation requires you to be root."
-  exit 1
-fi
-
-################################################################################
-required_args=2
-[ $unmount = "YES" ] && required_args=1
-
-if [ $# -ne $required_args ]; then
-  echo "ERROR: wrong number of arguments, expected $required_args"
-  usage
-  exit 1
-fi
-
-################################################################################
-if [ $unmount = "NO" ]; then
-  device=$1
-  point=$2
-
-  if [ ! -b "$device" ] && [ ! -r "$device" ]; then
-    echo "ERROR: $device is not a valid device"
-    exit 1
-  fi
-
-  if [ ! -d "$point" ]; then
-    echo "ERROR: $point is not a valid directory"
-    exit 1
-  fi
-
-  if [ ! -b "$device" ]; then
-    loopback=$(losetup -f)
-    do_cmd losetup "$loopback" "$device"
-    do_mount "$loopback"
+  if [ "$option_unmount" -eq 0 ]; then
+    if [ $# -ne 2 ]; then
+      echo >&2 "ERROR: Mounting requires two arguments"
+      exit 1
+    fi
+    option_device=$1
+    option_mount_point=$2
   else
-    do_mount "$device"
+    if [ $# -ne 1 ]; then
+      echo >&2 "ERROR: Unmounting requires a single mount point"
+      exit 1
+    fi
+    option_mount_point=$1
   fi
-else
-  do_umount "$1"
-fi
+}
 
-echo "==> done."
+################################################################################
+main() {
+  local loopback
+
+  parse_command_line "$@"
+  prepare_password
+
+  if [ $option_unmount = 0 ]; then
+    if [ ! -b "$option_device" ] && [ ! -r "$option_device" ]; then
+      echo >&2 "ERROR: $option_device is not a valid device"
+      exit 1
+    fi
+
+    if [ ! -d "$option_mount_point" ]; then
+      echo >&2 "ERROR: $option_mount_point is not a valid directory"
+      exit 1
+    fi
+
+    if [ ! -b "$option_device" ]; then
+      loopback=$(sudo_ losetup -f)
+      sudo_ losetup "$loopback" "$option_device"
+      do_mount "$loopback" "$option_mount_point"
+    else
+      do_mount "$option_device" "$option_mount_point"
+    fi
+  else
+    do_umount "$option_mount_point"
+  fi
+}
+
+################################################################################
+main "$@"

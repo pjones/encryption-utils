@@ -1,198 +1,178 @@
-#!/bin/sh -eu
+#!/usr/bin/env bash
 
 ################################################################################
-usage () {
-cat <<EOF
+set -eu
+set -o pipefail
+
+################################################################################
+usage() {
+  cat <<EOF
 Usage: $(basename "$0") [option] <device>
 
 Prepare <device> as an encrypted disk using LUKS
 
 Options:
 
-  -b     Make the new file system bootable on a BIOS
-  -c DIR Clone directory DIR as an encrypted image file
-  -d     Create two partitions, encrypting the second
-  -e     Directly encrypt <device> without partitioning
-  -f     Specify that <device> is really an image file
-
-  -s MB  When using -d, first partition size is MB
-         When using -c, add MB padding to the image file
-         When using -f, set the size of the image file
+  -b       Make the new file system (legacy BIOS) bootable
+  -d       Create two partitions, encrypting only the second
+  -e       Directly encrypt <device> without partitioning
+  -k FILE  File to read the LUKS password from
+  -p NAME  Read a password via 'pass show NAME'
+  -s MB    Enable -d and set first partition's size is MB
+  -!       Don't prompt for dangerous operations, just do it
 EOF
 }
 
 ################################################################################
-do_cmd () {
-  echo "$@"
-  "$@"
+option_bootable=0
+option_device=
+option_dual_partition=0
+option_force=0
+option_needs_partition=1
+option_partition_size=2048
+
+################################################################################
+# shellcheck source=../lib/encryption-utils.sh
+. "$(dirname "$0")/../lib/encryption-utils.sh"
+
+################################################################################
+parse_command_line() {
+  while getopts "bdehk:p:s:!" o; do
+    case "${o}" in
+    b)
+      option_bootable=1
+      option_needs_partition=1
+      ;;
+
+    d)
+      option_dual_partition=1
+      option_needs_partition=1
+      ;;
+
+    e)
+      option_needs_partition=0
+      ;;
+
+    h)
+      usage
+      exit
+      ;;
+
+    k)
+      option_key_file=$OPTARG
+      ;;
+
+    p)
+      option_pass_name=$OPTARG
+      ;;
+
+    s)
+      option_partition_size="$OPTARG"
+      option_dual_partition=1
+      option_needs_partition=1
+      ;;
+
+    '!')
+      option_force=1
+      ;;
+
+    *)
+      exit 1
+      ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  if [ $# -ne 1 ]; then
+    echo >&2 "ERROR: Please provide exactly one device"
+    exit 1
+  fi
+
+  option_device=$1
 }
 
 ################################################################################
-bios=NO
-dual=NO
-size=""
-imgfile=NO
-partition=YES
-clone=""
+confirm_destroy() {
+  if [ "$option_force" -ne 1 ]; then
+    printf "%s" "Really destroy all data on ${option_device}? (y/n): "
+    read -r answer
 
-while getopts "bc:efdhs:" o; do
-  case "${o}" in
-    b) bios=YES
-       ;;
-
-    c) clone="$OPTARG"
-       imgfile=YES
-       [ -z "$size" ] && size=8
-
-       if [ ! -d "$clone" ]; then
-         echo "directory to clone doesn't exist: $clone"
-         exit 1
-       fi
-       ;;
-
-    d) dual=YES
-       ;;
-
-    e) partition=NO
-       ;;
-
-    f) imgfile=YES
-       [ -z "$size" ] && size=2048
-       ;;
-
-    h) usage
-       exit
-       ;;
-
-    s) size="$OPTARG"
-       ;;
-
-    *) echo "ERROR: bad option $o"
-       exit 1
-       ;;
-  esac
-done
-
-shift $((OPTIND-1))
-[ -z "$size" ] && size=2048
-
-################################################################################
-if [ "$(id -u)" != 0 ]; then
-  echo "ERROR: this operation requires you to be root."
-  exit 1
-fi
-
-if [ $# -ne 1 ]; then
-  usage
-  exit 1
-fi
-
-if [ "$imgfile" = "NO" ] && [ ! -b "$1" ]; then
-  echo "ERROR: $1 is not a block device"
-  exit 1
-fi
-
-if [ "$imgfile" = "YES" ] && [ -r "$1" ]; then
-  echo "ERROR: $1 already exists"
-  exit 1
-fi
-
-################################################################################
-device=$1
+    if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+      exit
+    fi
+  fi
+}
 
 ################################################################################
 do_partition() {
-  printf "%s" "Really destroy all data on $device? (y/n): "
-  read -r answer
-  [ "$answer" = "y" ] || [ "$answer" = "Y" ] || exit
+  local partition_label=gpt
 
-  if [ "$dual" = "NO" ] && [ "$partition" = "YES" ]; then
-    full_device="${device}1"
-  elif [ "$partition" = "NO" ]; then
-    full_device="$device"
+  if [ ! -b "$option_device" ]; then
+    echo >&2 "ERROR: $option_device is not a block device"
+    exit 1
+  fi
+
+  confirm_destroy
+
+  if [ "$option_bootable" -eq 1 ]; then
+    partition_label=msdos
+  fi
+
+  if [ "$option_dual_partition" -eq 0 ]; then
+    sudo_ parted -s "$option_device" -- \
+      mklabel "$partition_label" \
+      mkpart primary ext4 0% 100%
+    do_encrypt "${option_device}1"
   else
-    full_device="${device}2"
+    sudo_ parted -s "$option_device" -- \
+      mklabel "$partition_label" \
+      mkpart primary ext4 0% "$option_partition_size"MB \
+      mkpart primary ext4 $((option_partition_size + 1))MB 100%
+    do_cmd mkfs.ext4 "${option_device}1"
+    do_encrypt "${option_device}2"
   fi
-
-  if [ "$partition" = "YES" ]; then
-    echo "==> creating partition table"
-    label=gpt
-    [ "$bios" = "YES" ] && label=msdos
-
-    if [ "$dual" = "NO" ]; then
-      do_cmd parted -s "$device" -- \
-             mklabel "$label" \
-             mkpart primary ext4 0% 100%
-    else
-      do_cmd parted -s "$device" -- \
-             mklabel "$label" \
-             mkpart primary ext4 0% "$size"MB \
-             mkpart primary ext4 $(("$size" + 1))MB 100%
-    fi
-  fi
-
-  do_encrypt "$full_device"
-}
-
-################################################################################
-do_make_image_file() {
-  # Work with bytes since we are limited to integer arithmetic when
-  # using the shell's ((expr)) syntax.
-  if [ -n "$clone" ]; then
-    padding=$(("$size" * 1024 * 1024))
-    origin_size=$(du --summarize --count-links --bytes --dereference-args "$clone" | cut -f 1)
-    bytes=$(("$origin_size" + "$padding"))
-  else
-    bytes=$(("$size" * 1024 * 1024))
-  fi
-
-  loopback=$(losetup -f)
-  do_cmd dd if=/dev/zero of="$device" ibs=1M obs=1M bs=1c count="$bytes"
-  do_cmd losetup "$loopback" "$device"
-  do_encrypt "$loopback"
-  do_cmd losetup -d "$loopback"
 }
 
 ################################################################################
 do_encrypt() {
-  encdevice=$1
-  map="$(basename "$encdevice")_crypt"
+  local device=$1
+  local crypt_device
+  local loopback
 
-  echo "==> setting up encryption formatting, enter disk password"
-  do_cmd cryptsetup -c aes -s 256 -h sha256 --batch-mode -y \
-         luksFormat "$encdevice"
+  crypt_device=$(make_crypt_device_name "$device")
 
-  echo "==> mapping encrypted encdevice, enter disk password"
-  do_cmd cryptsetup luksOpen "$encdevice" "$map"
+  loopback=$(sudo_ losetup -f)
+  sudo_ losetup "$loopback" "$device"
 
-  echo "==> creating file system on encrypted encdevice"
-  [ "$dual" = "YES" ] && [ "$imgfile" = "NO" ] && do_cmd mkfs.ext4 "${device}1"
-  do_cmd mkfs.ext4 -E lazy_itable_init=0,lazy_journal_init=0 "/dev/mapper/$map"
-  do_cmd sleep 5 # Let the disk catch up.
+  echo >&2 "==> Setting up LUKS device: $loopback"
+  cryptsetup_ luksFormat "$loopback"
+  cryptsetup_ open "$loopback" "$crypt_device"
+  sudo_ chown "$USER" "/dev/mapper/$crypt_device"
 
-  if [ -n "$clone" ]; then
-    echo "==> cloning $clone"
-    point=$(mktemp --directory)
-    do_cmd mount "/dev/mapper/$map" "$point"
-    echo "tar ... | tar ..."
-    tar -C "$clone" --hard-dereference -cf - . | tar -C "$point" -xvf -
-    do_cmd umount "$point"
-    do_cmd rmdir "$point"
-  fi
+  echo >&2 "==> Formatting disk image"
 
-  echo "==> unmapping encrypted encdevice"
-  do_cmd cryptsetup luksClose "$map"
+  mkfs.ext4 \
+    -E lazy_itable_init=0,lazy_journal_init=0 \
+    "/dev/mapper/$crypt_device"
+  sync
+
+  echo >&2 "==> Cleaning up..."
+  sudo_ cryptsetup close "$crypt_device"
+  sudo_ losetup -d "$loopback"
 }
 
 ################################################################################
-if [ "$imgfile" = "NO" ]; then
-  do_partition
-elif [ "$imgfile" = "YES" ]; then
-  do_make_image_file
-else
-  echo "Well, this is embarrassing, this should never happen."
-  exit 1
-fi
+main() {
+  parse_command_line "$@"
+  prepare_password
+
+  if [ "$option_needs_partition" -eq 1 ]; then
+    do_partition
+  else
+    do_encrypt "$option_device"
+  fi
+}
 
 ################################################################################
-echo "==> done."
+main "$@"

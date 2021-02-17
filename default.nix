@@ -8,8 +8,9 @@ pkgs.stdenvNoCC.mkDerivation rec {
   src = ./.;
 
   installPhase = ''
-    mkdir -p $out/bin $out/share/gnupg
+    mkdir -p $out/bin $out/lib $out/share/gnupg
     find bin boot -type f -exec install -m 0555 '{}' $out/bin ';'
+    find lib -type f -exec install -m 0444 '{}' $out/lib ';'
     find etc -type f -exec install -m 0444 '{}' $out/share/gnupg ';'
   '';
 }

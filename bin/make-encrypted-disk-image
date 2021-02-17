@@ -7,19 +7,7 @@ set -o pipefail
 ################################################################################
 option_key_file=
 option_pass_name=
-option_size=0
-
-################################################################################
-tmp_keyfile=
-
-################################################################################
-# Ensure any temporary files are cleaned up.
-cleanup() {
-  if [ -n "$tmp_keyfile" ] && [ -e "$tmp_keyfile" ]; then
-    rm "$tmp_keyfile"
-  fi
-}
-trap cleanup EXIT
+option_size=128M
 
 ################################################################################
 usage() {
@@ -32,92 +20,33 @@ mount-encrypted-dev tool.
 Options:
 
   -h       This message
-  -b NUM   The size of the new image, in MB
+  -b BYTES Size of the image file, passed to dd(1)
   -k FILE  File to read the password from
   -p NAME  Read a password via pass(1) giving it NAME
 
 Example:
 
-  $(basename "$0") -p images/foobar -b 1024 disk.img
+  $(basename "$0") -p images/foobar -b 1024M disk.img
 
 EOF
-}
-
-################################################################################
-# Read password on standard output if requested.
-prepare_password() {
-  if [ -n "$option_key_file" ]; then
-    if [ "$option_key_file" = "-" ]; then
-      tmp_keyfile=$(mktemp --tmpdir=/dev/shm keyfile.XXXXXXXXXX)
-      cat >"$tmp_keyfile"
-      option_key_file=$tmp_keyfile
-    fi
-  fi
-}
-
-################################################################################
-# Write the image password to standard output.
-password_to_stdout() {
-  if [ -n "$option_key_file" ]; then
-    cat "$option_key_file"
-  elif [ -n "$option_pass_name" ]; then
-    pass "$option_pass_name" | head -1
-  fi
-}
-
-################################################################################
-# Run a command using sudo if necessary.
-sudo_() {
-  if [ "$(id -u)" -ne 0 ]; then
-    sudo "$@"
-  else
-    "$@"
-  fi
-}
-
-################################################################################
-# Run cryptsetup with proper flags for the key file.
-cryptsetup_() {
-  local flags=("--batch-mode")
-
-  if [ -n "$option_key_file" ] || [ -n "$option_pass_name" ]; then
-    flags+=("--key-file" "-")
-    password_to_stdout |
-      sudo cryptsetup "${flags[@]}" "$@"
-  else
-    flags+=("-y")
-    sudo cryptsetup "${flags[@]}" "$@"
-  fi
 }
 
 ################################################################################
 # Generate the disk image.
 make_new_disk_image() {
   local image_file=$1
+  local encrypt_flags=("-e")
 
-  local device_name
-  device_name=$(basename "$image_file")_crypt
+  if [ -n "$option_key_file" ]; then
+    encrypt_flags+=("-k" "$option_key_file")
+  fi
 
-  echo "Writing zeros to $image_file"
-  dd if=/dev/zero of="$image_file" bs=1M count="$option_size"
+  if [ -n "$option_pass_name" ]; then
+    encrypt_flags+=("-p" "$option_pass_name")
+  fi
 
-  loopback=$(losetup -f)
-  losetup "$loopback" "$image_file"
-
-  echo "Setting up LUKS device: $loopback"
-  cryptsetup_ luksFormat "$loopback"
-  cryptsetup_ open "$loopback" "$device_name"
-  sudo chown "$USER" /dev/mapper/"$device_name"
-
-  echo "Formatting disk image"
-  mkfs.ext4 \
-    -E lazy_itable_init=0,lazy_journal_init=0 \
-    "/dev/mapper/$device_name"
-  sync
-
-  echo "Cleaning up..."
-  sudo cryptsetup close "$device_name"
-  losetup -d "$loopback"
+  dd if=/dev/zero of="$image_file" bs=1c count=0 seek="$option_size"
+  make-encrypted-dev "${encrypt_flags[@]}" "$image_file"
 
   echo "$image_file"
 }
@@ -153,11 +82,6 @@ main() {
 
   shift $((OPTIND - 1))
 
-  if [ "$option_size" -le 0 ]; then
-    echo >&2 "ERROR: size not given, use -b"
-    exit 1
-  fi
-
   if [ $# -ne 1 ]; then
     echo >&2 "ERROR: provide exactly one image file name"
     exit 1
@@ -170,13 +94,7 @@ main() {
     exit 1
   fi
 
-  if [ ! -w /dev/loop-control ]; then
-    echo >&2 "ERROR: you don't have permission to use losetup!"
-    exit 1
-  fi
-
   umask 077
-  prepare_password
   make_new_disk_image "$image_file"
 }
 
