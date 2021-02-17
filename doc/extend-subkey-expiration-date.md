@@ -39,9 +39,9 @@ your master key.  You should be though.)
   2. Use `cryptsetup` to decrypt the partition holding the GnuPG
      files.  With my USB key this was as simple as:
 
-        $ cryptsetup luksOpen /dev/sdb2 keys
+        $ cryptsetup open /dev/sda2 keys
         $ mkdir /mnt/keys
-        $ mount /mnt/mapper/keys /mnt/keys
+        $ mount /dev/mapper/keys /mnt/keys
 
   3. Ensure that GnuPG can find its files:
 

@@ -158,6 +158,15 @@ following:
      - Change the PIN (default `123456`) and Admin PIN (default `12345678`)
      - Set owner information
 
+  #. If you don't want to require a PIN entry for *every* signing
+     request then toggle the "Signature PIN: forced" setting:
+
+         $ gpg2 --card-edit
+
+         gpg/card> admin
+         gpg/card> forcesig
+         gpg/card> list
+
   #. Move keys to the smartcard:
 
         $ gpg2 --edit-key <keyID>
