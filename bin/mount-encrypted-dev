@@ -50,7 +50,10 @@ do_mount() {
     options+=("-o$(join_array_with ',' "${options_for_mount[@]}")")
   fi
 
-  cryptsetup_ open "$device" "$crypt_device"
+  if [ ! -e "/dev/mapper/$crypt_device" ]; then
+    cryptsetup_ open "$device" "$crypt_device"
+  fi
+
   sudo_ mount "${options[@]}" "/dev/mapper/$crypt_device" "$point"
 }
 
@@ -70,7 +73,7 @@ do_umount() {
 
   if basename "$crypt_device" | grep -Eq '^loop[0-9]+_'; then
     loopback="/dev/$(basename "$crypt_device" | sed -E -e 's/_.*$//')"
-    sudo_ losetup -d "$loopback"
+    sudo_ losetup --detach "$loopback"
   fi
 }
 
@@ -150,8 +153,7 @@ main() {
     fi
 
     if [ ! -b "$option_device" ]; then
-      loopback=$(sudo_ losetup -f)
-      sudo_ losetup "$loopback" "$option_device"
+      loopback=$(sudo_ losetup --nooverlap --find --show "$option_device")
       do_mount "$loopback" "$option_mount_point"
     else
       do_mount "$option_device" "$option_mount_point"
