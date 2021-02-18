@@ -7,12 +7,31 @@ tmp_keyfile=
 
 ################################################################################
 # Ensure any temporary files are cleaned up.
-cleanup() {
+lib_cleanup() {
   if [ -n "$tmp_keyfile" ] && [ -e "$tmp_keyfile" ]; then
     rm "$tmp_keyfile"
   fi
 }
-trap cleanup EXIT
+trap lib_cleanup EXIT
+
+################################################################################
+# Call one of the scripts passing in the current authentication options.
+call_internal_script() {
+  local script=$1
+  shift
+
+  local auth_options=()
+
+  if [ -n "$option_key_file" ]; then
+    auth_options+=("-k" "$option_key_file")
+  fi
+
+  if [ -n "$option_pass_name" ]; then
+    auth_options+=("-p" "$option_pass_name")
+  fi
+
+  "$script" "${auth_options[@]}" "$@"
+}
 
 ################################################################################
 # Read password on standard output if requested.
@@ -87,4 +106,13 @@ join_array_with() {
   shift
 
   printf "%s" "$first_element" "${@/#/$delimiter}"
+}
+
+################################################################################
+# Calculate the size of the given directory, in bytes.
+calc_directory_size() {
+  local directory=$1
+
+  du --bytes --summarize "$directory" |
+    cut -f1
 }

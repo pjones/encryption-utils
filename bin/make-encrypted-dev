@@ -105,6 +105,23 @@ confirm_destroy() {
 }
 
 ################################################################################
+make_file_system() {
+  local device=$1
+  local uid
+  local gid
+
+  uid=$(id --user)
+  gid=$(id --group)
+
+  do_cmd \
+    mkfs.ext4 \
+    -E lazy_itable_init=0,lazy_journal_init=0,root_owner="$uid:$gid" \
+    "$device"
+
+  do_cmd sync
+}
+
+################################################################################
 do_partition() {
   local partition_label=gpt
 
@@ -129,7 +146,7 @@ do_partition() {
       mklabel "$partition_label" \
       mkpart primary ext4 0% "$option_partition_size"MB \
       mkpart primary ext4 $((option_partition_size + 1))MB 100%
-    do_cmd mkfs.ext4 "${option_device}1"
+    make_file_system "${option_device}1"
     do_encrypt "${option_device}2"
   fi
 }
@@ -151,11 +168,7 @@ do_encrypt() {
   sudo_ chown "$USER" "/dev/mapper/$crypt_device"
 
   echo >&2 "==> Formatting disk image"
-
-  mkfs.ext4 \
-    -E lazy_itable_init=0,lazy_journal_init=0 \
-    "/dev/mapper/$crypt_device"
-  sync
+  make_file_system "/dev/mapper/$crypt_device"
 
   echo >&2 "==> Cleaning up..."
   sudo_ cryptsetup close "$crypt_device"
