@@ -1,0 +1,16 @@
+# Spare Yubikey/SmartCard as a Backup
+
+If you have multiple smartcards you can use one of them as a backup.
+Simply put the keys on the smartcard using the same procedure as
+creating a [new master key](new-master-pgp-key.md).
+
+## Teaching GnuPG to Use a Backup
+
+GnuPG stores the smartcard's serial number in its database and
+associates it with the private keys.  In order to get it to start
+using the backup smartcard you have to force it to "learn" the serial
+number for the inserted smart card:
+
+```
+$ gpg-connect-agent "scd serialno" "learn --force" /bye
+```

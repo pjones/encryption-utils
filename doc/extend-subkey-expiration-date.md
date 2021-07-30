@@ -100,3 +100,7 @@ and also upload it to a key server for everyone else.
 
 See [Creating a New OpenPGP Master Key](./new-master-pgp-key.md) for
 details.
+
+Also, **don't forget** to import your new public key on each computer
+you are using GnuPG on.  Otherwise you'll get strange errors about
+missing secret keys.
