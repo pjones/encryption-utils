@@ -28,9 +28,6 @@ these tasks (e.g., creating new OpenPGP keys).
     created by the `make-encrypted-dev` and `make-encrypted-disk-image`
     scripts.
 
-  * `boot/make-usb-drive`: Create a USB stick with two partitions.
-     Generate a [NixOS] [] ISO image and place it on the first
-     partition.  Then LUKS encrypt the second partition.  The NixOS
-     ISO image includes GnuPG and related tools.
-
-[nixos]: http://nixos.org/
+  * `bin/extend-subkey-expiration-date.sh`: Mostly automate the
+    process of booting into a machine with no network and extending
+    the expiration date of your subkeys.

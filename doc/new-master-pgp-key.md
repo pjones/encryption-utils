@@ -191,8 +191,8 @@ following:
 
   #. Backup everything we have so far:
 
-        $ gpg2 -a --export-secret-subkeys <keyID> --output $GNUPGHOME/../backup/subkeystubs.txt
-        $ gpg2 -a --export <keyID> --output $GNUPGHOME/../backup/public.txt
+        $ gpg2 -a --output $GNUPGHOME/../backup/subkeystubs.txt --export-secret-subkeys <keyID>
+        $ gpg2 -a --output $GNUPGHOME/../backup/public.txt --export <keyID>
 
   #. Transfer to another machine and import the public key:
 

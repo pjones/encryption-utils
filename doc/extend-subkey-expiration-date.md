@@ -15,6 +15,9 @@ are really doing is signing the public key with an expiring signature.
 Therefore you only need to distribute a new public key after changing
 the expiration date, the private keys are not affected.
 
+(Note: there's a script in this repository, named after this file,
+which automates everything discussed here.)
+
 ## Before Continuing (Important Note 1)
 
 Take a moment to
@@ -52,7 +55,7 @@ your master key.  You should be though.)
 Finding the expiration date for all of your keys is as simple as
 using:
 
-    $ gpg2 --list-keys
+    $ gpg2 --list-options show-unusable-subkeys --list-keys
 
 This will also show you the key ID of the master key, which you will
 use in the next step.
@@ -104,3 +107,9 @@ details.
 Also, **don't forget** to import your new public key on each computer
 you are using GnuPG on.  Otherwise you'll get strange errors about
 missing secret keys.
+
+Note: If you don't want to read the other documentation, here's the
+command for importing the public key:
+
+    $ gpg2 --import < public.txt
+

@@ -81,7 +81,10 @@ cryptsetup_() {
     password_to_stdout |
       sudo_ cryptsetup "${flags[@]}" "$@"
   else
-    flags+=("-y")
+    if [ "$1" = "luksFormat" ]; then
+      flags+=("-y")
+    fi
+
     sudo_ cryptsetup "${flags[@]}" "$@"
   fi
 }
