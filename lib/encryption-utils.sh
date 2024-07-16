@@ -51,7 +51,9 @@ password_to_stdout() {
   if [ -n "$option_key_file" ]; then
     cat "$option_key_file"
   elif [ -n "$option_pass_name" ]; then
-    pass show "$option_pass_name" | head -1
+    pass show "$option_pass_name" |
+      head -1 |
+      tr -d '\n'
   fi
 }
 
