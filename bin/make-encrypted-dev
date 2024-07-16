@@ -98,7 +98,7 @@ confirm_destroy() {
     printf "%s" "Really destroy all data on ${option_device}? (y/n): "
     read -r answer
 
-    if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+    if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
       exit
     fi
   fi
