@@ -2,7 +2,7 @@
   description = "Peter's Encryption Utilities and Notes";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
 
     nixos-generators = {
@@ -26,7 +26,8 @@
     {
       nixosModules = {
         offlineGPG = { pkgs, ... }: {
-          system.stateVersion = "23.05";
+          networking.hostName = "gpg";
+          system.stateVersion = "24.05";
           isoImage.appendToMenuLabel = " w/ GPG";
 
           environment.systemPackages = [
@@ -44,6 +45,7 @@
 
           # Might be needed:
           hardware.gpgSmartcards.enable = true;
+          programs.gnupg.agent.enable = true;
 
           # Make sure networking is disabled.
           networking.useDHCP = false;
@@ -51,6 +53,22 @@
           networking.networkmanager.enable = false;
           networking.interfaces = { };
           networking.wireless.enable = false;
+
+          # Create a user with sudo access:
+          users.users.nixos = {
+            isNormalUser = true;
+            extraGroups = [ "wheel" ];
+            initialHashedPassword = "";
+          };
+
+          # Allow sudo without a password:
+          security.sudo = {
+            enable = true;
+            wheelNeedsPassword = false;
+          };
+
+          services.getty.autologinUser = "nixos";
+          users.users.root.initialHashedPassword = "";
         };
       };
 
@@ -58,9 +76,21 @@
         encryption-utils = import ./. { pkgs = nixpkgsFor.${system}; };
 
         iso = nixos-generators.nixosGenerate {
-          format = "install-iso";
-          system = "x86_64-linux";
+          inherit system;
+
+          format = "iso";
+          specialArgs.pkgs = nixpkgsFor.${system};
+
           modules = [
+            ({ config, lib, pkgs, ... }: {
+              nix.registry.nixpkgs.flake = nixpkgs;
+              isoImage.isoName = lib.concatStringsSep "-" [
+                config.system.nixos.distroId
+                "gnupg"
+                config.system.nixos.label
+                pkgs.stdenv.hostPlatform.system
+              ] + ".iso";
+            })
             nixos-hardware.nixosModules.framework-12th-gen-intel
             self.nixosModules.offlineGPG
           ];
