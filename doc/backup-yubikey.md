@@ -2,7 +2,9 @@
 
 If you have multiple smartcards you can use one of them as a backup.
 Simply put the keys on the smartcard using the same procedure as
-creating a [new master key](new-master-pgp-key.md).
+creating a [new master key](new-master-pgp-key.md).  Note: you'll need to restore the
+backup of your subkeys so they are present on the keyring and can be
+transferred to the smartcard.
 
 ## Teaching GnuPG to Use a Backup
 

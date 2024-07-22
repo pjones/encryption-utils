@@ -137,10 +137,6 @@ following:
 
 ## Transferring Subkeys to a Yubikey
 
-  #. Prepare the Yubikey:
-
-        $ ykpersonalize -m82
-
   #. Configure the OpenPGP Applet
 
         $ gpg2 --card-edit
