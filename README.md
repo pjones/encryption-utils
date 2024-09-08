@@ -6,7 +6,7 @@ these tasks (e.g., creating new OpenPGP keys).
 
 ## Tutorials/Documentation
 
-  * [Creating a New OpenPGP Master Key](doc/new-master-pgp-key.md)
+  * [Creating a New OpenPGP Key](doc/new-pgp-key.md)
 
   * [Extending the Expiration Date for GPG Subkeys](doc/extend-subkey-expiration-date.md)
 

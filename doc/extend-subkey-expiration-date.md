@@ -4,7 +4,7 @@
 
 # Extending the Expiration Date for GPG Subkeys
 
-If you followed my directions for creating a master key that never
+If you followed my directions for creating a primary key that never
 expires, and subkeys that do expire, then you're going to occasionally
 need to extend the expiration date of those subkeys before they
 expire.
@@ -21,7 +21,7 @@ which automates everything discussed here.)
 ## Before Continuing (Important Note 1)
 
 Take a moment to
-read [Creating a New OpenPGP Master Key](./new-master-pgp-key.md) to
+read [Creating a New OpenPGP Key](./new-pgp-key.md) to
 refresh your memory of how things are setup and what the various
 commands in this document do.
 
@@ -34,7 +34,7 @@ dates of your keys **take another backup** of these items.
 ## Booting and Mounting the Keys
 
 (Skip this section if you are not using a secure USB drive to hold
-your master key.  You should be though.)
+your primary key.  You should be though.)
 
   1. Boot a computer off the OS on the USB drive.  Once booted you can
      log in as `root` without a password.
@@ -55,17 +55,17 @@ your master key.  You should be though.)
 Finding the expiration date for all of your keys is as simple as
 using:
 
-    $ gpg2 --list-options show-unusable-subkeys --list-keys
+    $ gpg --list-options show-unusable-subkeys --list-keys
 
-This will also show you the key ID of the master key, which you will
+This will also show you the key ID of the primary key, which you will
 use in the next step.
 
 ## Changing the Expiration Date for the Subkeys
 
-Begin by starting a GnuPG shell with the intent to edit your master
+Begin by starting a GnuPG shell with the intent to edit your primary
 key:
 
-    $ gpg2 --edit-key <KEY-ID>
+    $ gpg --edit-key <KEY-ID>
 
 GnuPG should tell you that your secret key is available and this list
 the key along with its subkeys.
@@ -101,7 +101,7 @@ expiration date only affects the public keys.
 You will need to copy your public key back to your main workstation
 and also upload it to a key server for everyone else.
 
-See [Creating a New OpenPGP Master Key](./new-master-pgp-key.md) for
+See [Creating a New OpenPGP Key](./new-pgp-key.md) for
 details.
 
 Also, **don't forget** to import your new public key on each computer
@@ -111,5 +111,5 @@ missing secret keys.
 Note: If you don't want to read the other documentation, here's the
 command for importing the public key:
 
-    $ gpg2 --import < public.txt
+    $ gpg --import < public.txt
 

@@ -4,8 +4,8 @@
 
 This guide shows how to build a bootable USB thumb drive that also
 contains a LUKS encrypted file system.  The idea is that you boot into
-a read-only operating system and store your master private key on a
-LUKS encrypted partition on the same thumb drive.
+a read-only operating system and store your private key on a LUKS
+encrypted partition on the same thumb drive.
 
 ## Choose an ISO Image
 
@@ -37,11 +37,11 @@ NOTE: When using this ISO, the documentation will be in:
      Look at the `boot/make-usb-drive` for inspiration.
 
   #. Boot off the USB stick, mount the second partition, and work with
-     GnuPG.  The `make-encrypted-dev` script in this repository can be
+     GnuPG.  The `mount-encrypted-dev` script in this repository can be
      used to help mount the encrypted second partition.
 
 Detailed instructions for setting up a new GnuPG key with this setup
-can be found in the [new-master-pgp-key.md](new-master-pgp-key.md)
+can be found in the [new-pgp-key.md](new-pgp-key.md)
 file.
 
 ## References

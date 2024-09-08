@@ -73,6 +73,7 @@
       };
 
       packages = forAllSystems (system: {
+        default = self.packages.${system}.encryption-utils;
         encryption-utils = import ./. { pkgs = nixpkgsFor.${system}; };
 
         iso = nixos-generators.nixosGenerate {
@@ -97,12 +98,20 @@
         };
       });
 
-      defaultPackage =
-        forAllSystems (system: self.packages.${system}.encryption-utils);
-
-      overlay = final: prev: {
-        pjones = (prev.pjones or { }) //
-          { encryption-utils = self.packages.${prev.system}.encryption-utils; };
+      overlays = {
+        default = final: prev: {
+          pjones = (prev.pjones or { }) //
+            { encryption-utils = self.packages.${prev.system}.encryption-utils; };
+        };
       };
+
+      devShells = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system}; in {
+          default = pkgs.mkShell {
+            buildInputs = [
+              pkgs.pinentry.tty
+            ];
+          };
+        });
     };
 }
