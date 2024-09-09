@@ -105,10 +105,13 @@
       };
 
       checks = forAllSystems (system:
-        let pkgs = nixpkgsFor.${system}; in {
-          encrypted-dev = import test/encrypted-dev.nix {
-            inherit pkgs self;
-          };
+        let
+          pkgs = nixpkgsFor.${system};
+          test = file: import file { inherit pkgs self; };
+        in
+        {
+          encrypted-dev = test test/encrypted-dev.nix;
+          gpg-new-key = test test/gpg-new-key.nix;
         });
 
       devShells = forAllSystems (system:

@@ -78,7 +78,7 @@ following:
   #. Tell GnuPG where to store files:
 
         $ export GNUPGHOME=/mnt/keys/gnupg
-        $ mkdir -p $GNUPGHOME
+        $ mkdir -p -m 0700 $GNUPGHOME
 
   #. Generate a new key:
 
