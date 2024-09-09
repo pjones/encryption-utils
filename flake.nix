@@ -26,10 +26,6 @@
     {
       nixosModules = {
         offlineGPG = { pkgs, ... }: {
-          networking.hostName = "gpg";
-          system.stateVersion = "24.05";
-          isoImage.appendToMenuLabel = " w/ GPG";
-
           environment.systemPackages = [
             pkgs.cryptsetup
             pkgs.file
@@ -68,7 +64,6 @@
           };
 
           services.getty.autologinUser = "nixos";
-          users.users.root.initialHashedPassword = "";
         };
       };
 
@@ -85,6 +80,10 @@
           modules = [
             ({ config, lib, pkgs, ... }: {
               nix.registry.nixpkgs.flake = nixpkgs;
+              networking.hostName = "gpg";
+              system.stateVersion = "24.05";
+              users.users.root.initialHashedPassword = "";
+              isoImage.appendToMenuLabel = " w/ GPG";
               isoImage.isoName = lib.concatStringsSep "-" [
                 config.system.nixos.distroId
                 "gnupg"
@@ -104,6 +103,13 @@
             { encryption-utils = self.packages.${prev.system}.encryption-utils; };
         };
       };
+
+      checks = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system}; in {
+          encrypted-dev = import test/encrypted-dev.nix {
+            inherit pkgs self;
+          };
+        });
 
       devShells = forAllSystems (system:
         let pkgs = nixpkgsFor.${system}; in {

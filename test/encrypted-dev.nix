@@ -1,20 +1,14 @@
-{ pkgs ? import <nixpkgs> { }
+{ pkgs
+, self
 }:
 pkgs.nixosTest {
-  name = "encryption-utils-test";
+  name = "encrypted-dev-test";
 
   nodes = {
     machine = { pkgs, ... }: {
+      imports = [ self.nixosModules.offlineGPG ];
       virtualisation.memorySize = 1024;
       virtualisation.emptyDiskImages = [ 512 512 ];
-
-      environment.systemPackages = [
-        pkgs.utillinux
-        pkgs.cryptsetup
-        pkgs.parted
-
-        (import ../. { inherit pkgs; })
-      ];
     };
   };
 
