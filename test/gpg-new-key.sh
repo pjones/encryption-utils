@@ -8,7 +8,7 @@ mkdir -p "$(dirname "$GNUPGHOME")"
 mkdir -m 0700 "$GNUPGHOME"
 
 gpg-new-key.sh -t \
-  -e foo@example.com \
+  -e 'Joe T Foo <foo@example.com>' \
   -e bar@example.com
 
 # Will fail if key doesn't exist:
