@@ -22,20 +22,25 @@
 
       # Attribute set of nixpkgs for each system:
       nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
+
+      deps = pkgs: [
+        pkgs.cryptsetup
+        pkgs.file
+        pkgs.gnumake
+        pkgs.gnupg
+        pkgs.libossp_uuid
+        pkgs.parted
+        pkgs.pinentry.tty
+        pkgs.util-linux
+        pkgs.ventoy
+        pkgs.yubikey-manager
+        pkgs.yubikey-personalization
+      ];
     in
     {
       nixosModules = {
         offlineGPG = { pkgs, ... }: {
-          environment.systemPackages = [
-            pkgs.cryptsetup
-            pkgs.file
-            pkgs.gnumake
-            pkgs.gnupg
-            pkgs.libossp_uuid
-            pkgs.parted
-            pkgs.pinentry.tty
-            pkgs.yubikey-manager
-            pkgs.yubikey-personalization
+          environment.systemPackages = deps pkgs ++ [
             self.packages.${pkgs.system}.encryption-utils
           ];
 
@@ -67,35 +72,39 @@
         };
       };
 
-      packages = forAllSystems (system: {
-        default = self.packages.${system}.encryption-utils;
-        encryption-utils = import ./. { pkgs = nixpkgsFor.${system}; };
+      packages = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system}; in {
+          default = self.packages.${system}.encryption-utils;
 
-        iso = nixos-generators.nixosGenerate {
-          inherit system;
+          encryption-utils = pkgs.callPackage ./. {
+            deps = deps pkgs;
+          };
 
-          format = "iso";
-          specialArgs.pkgs = nixpkgsFor.${system};
+          iso = nixos-generators.nixosGenerate {
+            inherit system;
 
-          modules = [
-            ({ config, lib, pkgs, ... }: {
-              nix.registry.nixpkgs.flake = nixpkgs;
-              networking.hostName = "gpg";
-              system.stateVersion = "24.05";
-              users.users.root.initialHashedPassword = "";
-              isoImage.appendToMenuLabel = " w/ GPG";
-              isoImage.isoName = lib.concatStringsSep "-" [
-                config.system.nixos.distroId
-                "gnupg"
-                config.system.nixos.label
-                pkgs.stdenv.hostPlatform.system
-              ] + ".iso";
-            })
-            nixos-hardware.nixosModules.framework-12th-gen-intel
-            self.nixosModules.offlineGPG
-          ];
-        };
-      });
+            format = "iso";
+            specialArgs.pkgs = nixpkgsFor.${system};
+
+            modules = [
+              ({ config, lib, pkgs, ... }: {
+                nix.registry.nixpkgs.flake = nixpkgs;
+                networking.hostName = "gpg";
+                system.stateVersion = "24.05";
+                users.users.root.initialHashedPassword = "";
+                isoImage.appendToMenuLabel = " w/ GPG";
+                isoImage.isoName = lib.concatStringsSep "-" [
+                  config.system.nixos.distroId
+                  "gnupg"
+                  config.system.nixos.label
+                  pkgs.stdenv.hostPlatform.system
+                ] + ".iso";
+              })
+              nixos-hardware.nixosModules.framework-12th-gen-intel
+              self.nixosModules.offlineGPG
+            ];
+          };
+        });
 
       overlays = {
         default = final: prev: {
@@ -103,6 +112,18 @@
             { encryption-utils = self.packages.${prev.system}.encryption-utils; };
         };
       };
+
+      apps = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system}; in {
+          default = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "mkventoyusb" ''
+              ${self.packages.${system}.encryption-utils}/bin/make-encrypted-usb-drive \
+                -i ${self.packages.${system}.iso}/iso/nixos-*.iso \
+                "$@"
+            '');
+          };
+        });
 
       checks = forAllSystems (system:
         let
@@ -112,14 +133,13 @@
         {
           encrypted-dev = test test/encrypted-dev.nix;
           gpg-new-key = test test/gpg-new-key.nix;
+          make-usb-drive = test test/make-usb-drive.nix;
         });
 
       devShells = forAllSystems (system:
         let pkgs = nixpkgsFor.${system}; in {
           default = pkgs.mkShell {
-            buildInputs = [
-              pkgs.pinentry.tty
-            ];
+            buildInputs = deps pkgs;
           };
         });
     };

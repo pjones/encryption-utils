@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+
+################################################################################
+set -eu
+set -o pipefail
+
+################################################################################
+option_device=
+option_iso=
+option_size=1024
+option_key_file=
+option_pass_name=
+
+################################################################################
+tmp_mount_dir=
+
+################################################################################
+# shellcheck source=../lib/encryption-utils.sh
+. "$(dirname "$0")/../lib/encryption-utils.sh"
+
+################################################################################
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options]
+
+  -h       This message
+  -i FILE  Copy FILE into the Ventoy ISO partition
+  -k FILE  File to read the password from
+  -p NAME  Read a password via pass(1) giving it NAME
+  -s N     Reserve N megabytes of disk for GnuPG (default: $option_size)
+  -t       Enable verbose output for testing
+
+EOF
+}
+
+################################################################################
+cleanup() {
+  if [ -n "$tmp_mount_dir" ] && mountpoint --quiet "$tmp_mount_dir"; then
+    sudo_ umount "$tmp_mount_dir"
+    rmdir "$tmp_mount_dir"
+  fi
+}
+
+################################################################################
+parse_options() {
+  while getopts "hi:k:p:s:t" o; do
+    case "${o}" in
+    h)
+      usage
+      exit
+      ;;
+
+    i)
+      option_iso=$OPTARG
+      if [ ! -e "$option_iso" ]; then
+        echo >&2 "ERROR: file does not exist: $option_iso"
+      fi
+      ;;
+
+    k)
+      option_key_file=$OPTARG
+      ;;
+
+    p)
+      option_pass_name=$OPTARG
+      ;;
+
+    s)
+      option_size=$OPTARG
+      ;;
+
+    t)
+      set -x
+      ;;
+
+    *)
+      exit 1
+      ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  if [ $# -ne 1 ]; then
+    echo >&2 "ERROR: Please provide exactly one device"
+    exit 1
+  fi
+
+  option_device=$1
+}
+
+################################################################################
+main() {
+  local public_size
+  local public_start
+  local public_end
+  local gnupg_start
+  local make_dev_opts=("-e")
+
+  parse_options "$@"
+
+  public_size=$((option_size / 4))
+  public_start="-${option_size}MB"
+  public_end="-$((option_size - public_size))MB"
+  gnupg_start="-$((option_size - public_size))MB"
+
+  if [ -n "$option_key_file" ]; then
+    make_dev_opts+=("-k" "$option_key_file")
+  fi
+
+  if [ -n "$option_pass_name" ]; then
+    make_dev_opts+=("-p" "$option_pass_name")
+  fi
+
+  echo >&2 "==> Creating Ventoy partitions..."
+  sudo_ ventoy -I -r "$option_size" -g "$option_device"
+
+  echo >&2 "==> Creating Public and GnuPG partitions..."
+  sudo_ parted -s "$option_device" -- \
+    mkpart Public ext4 "$public_start" "$public_end" \
+    mkpart GnuPG ext4 "$gnupg_start" 100%
+  sudo_ mkfs.ext4 -L Public "$option_device"3
+
+  echo >&2 "==> Encrypting GnuPG partition with LUKS..."
+  do_cmd "$(dirname "$0")"/../bin/make-encrypted-dev \
+    "${make_dev_opts[@]}" \
+    "$option_device"4
+
+  if [ -n "$option_iso" ]; then
+    echo >&2 "==> Copying ISO file to Ventoy"
+    tmp_mount_dir=$(mktemp --directory "$(basename "$0")-XXXX")
+    trap cleanup EXIT
+    sudo_ mount "$option_device"1 "$tmp_mount_dir"
+    sudo_ cp "$option_iso" "$tmp_mount_dir"
+    sync
+  fi
+}
+
+################################################################################
+main "$@"

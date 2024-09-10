@@ -1,26 +1,32 @@
-{ pkgs ? import <nixpkgs> { }
+{ stdenvNoCC
+, makeWrapper
+, lib
+, deps
 }:
 
-pkgs.stdenvNoCC.mkDerivation rec {
+stdenvNoCC.mkDerivation rec {
   name = "encryption-utils";
   meta.description = "Peter's encryption scripts";
-  phases = [ "unpackPhase" "installPhase" "fixupPhase" ];
+  dontBuild = true;
   src = ./.;
 
+  nativeBuildInputs = [ makeWrapper ];
+
   installPhase = ''
-    mkdir -p $out/bin $out/libexec $out/lib $out/share/doc/encryption $out/share/gnupg
+    mkdir -p \
+      "$out/bin" \
+      "$out/wrapped" \
+      "$out/lib" \
+      "$out/share/doc/encryption"
 
-    find bin -type f -exec install -m 0555 '{}' $out/bin ';'
-    find libexec -type f -exec install -m 0555 '{}' $out/libexec ';'
-    find lib -type f -exec install -m 0444 '{}' $out/lib ';'
-    find etc -type f -exec install -m 0444 '{}' $out/share/gnupg ';'
-    find doc -type f -exec install -m 0444 '{}' $out/share/doc/encryption ';'
-
-    export gpgAgent=${pkgs.gnupg}/bin/gpg-agent
-    export pinentry=${pkgs.pinentry.tty}/bin/pinentry
+    find bin -type f -exec install -m 0555 '{}' "$out/wrapped" ';'
+    find lib -type f -exec install -m 0444 '{}' "$out/lib" ';'
+    find doc -type f -exec install -m 0444 '{}' "$out/share/doc/encryption" ';'
 
     while IFS= read -r -d "" file; do
-      substituteAllInPlace "$file";
-    done < <(find "$out/bin" "$out/libexec" "$out/lib" -type f -print0)
+      makeWrapper \
+        "$file" "$out/bin/$(basename "$file")" \
+        --prefix PATH : "${lib.makeBinPath deps}"
+    done < <(find "$out/wrapped" -type f -print0)
   '';
 }
