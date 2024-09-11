@@ -42,6 +42,7 @@
         offlineGPG = { pkgs, ... }: {
           environment.systemPackages = deps pkgs ++ [
             self.packages.${pkgs.system}.encryption-utils
+            self.packages.${pkgs.system}.gpg-prepare
           ];
 
           # Might be needed:
@@ -54,21 +55,6 @@
           networking.networkmanager.enable = false;
           networking.interfaces = { };
           networking.wireless.enable = false;
-
-          # Create a user with sudo access:
-          users.users.nixos = {
-            isNormalUser = true;
-            extraGroups = [ "wheel" ];
-            initialHashedPassword = "";
-          };
-
-          # Allow sudo without a password:
-          security.sudo = {
-            enable = true;
-            wheelNeedsPassword = false;
-          };
-
-          services.getty.autologinUser = "nixos";
         };
       };
 
@@ -80,10 +66,14 @@
             deps = deps pkgs;
           };
 
+          gpg-prepare =
+            pkgs.writeShellScriptBin "gpg-prepare"
+              (builtins.readFile script/gpg-prepare);
+
           iso = nixos-generators.nixosGenerate {
             inherit system;
 
-            format = "iso";
+            format = "install-iso";
             specialArgs.pkgs = nixpkgsFor.${system};
 
             modules = [
@@ -93,14 +83,28 @@
                 system.stateVersion = "24.05";
                 users.users.root.initialHashedPassword = "";
                 isoImage.appendToMenuLabel = " w/ GPG";
-                isoImage.isoName = lib.concatStringsSep "-" [
-                  config.system.nixos.distroId
-                  "gnupg"
-                  config.system.nixos.label
-                  pkgs.stdenv.hostPlatform.system
-                ] + ".iso";
+
+                isoImage.isoName = lib.mkForce (
+                  lib.concatStringsSep "-" [
+                    config.system.nixos.distroId
+                    "gnupg"
+                    config.system.nixos.label
+                    pkgs.stdenv.hostPlatform.system
+                  ] + ".iso"
+                );
+
+                environment.variables.GNUPGHOME = "/mnt/keys/gnupg";
+                services.getty.helpLine = ''
+
+                  To prepare an environment for GnuPG first run the
+                  gpg-prepare command.  You should give it the path to
+                  device file for the USB drive that has the encrypted
+                  GnuPG partition on it.  For example:
+
+                    gpg-prepare /dev/sda
+                '';
               })
-              nixos-hardware.nixosModules.framework-12th-gen-intel
+
               self.nixosModules.offlineGPG
             ];
           };

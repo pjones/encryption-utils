@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+################################################################################
+set -eu
+set -o pipefail
+
+################################################################################
+option_device=/dev/sda
+option_public_partition=3
+option_gnupg_partition=4
+option_key_file=
+
+################################################################################
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options] device
+
+  -h      This message
+  -k FILE Read disk encryption passphrase from FILE
+  -p N    Use partition N for /mnt/public (default: $option_public_partition)
+  -g N    Use partition N for /mnt/keys (default: $option_gnupg_partition)
+
+The default device for the USB drive is $option_device
+
+EOF
+}
+
+################################################################################
+parse_options() {
+  # Option arguments are in $OPTARG
+  while getopts "g:hk:p:" o; do
+    case "${o}" in
+    g)
+      option_gnupg_partition=$OPTARG
+      ;;
+
+    h)
+      usage
+      exit
+      ;;
+
+    k)
+      option_key_file=$OPTARG
+      ;;
+
+    p)
+      option_public_partition=$OPTARG
+      ;;
+
+    *)
+      exit 1
+      ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  if [ $# -eq 1 ]; then
+    option_device=$1
+  elif [ $# -gt 1 ]; then
+    echo >&2 "ERROR: only one device can be given"
+    exit 1
+  fi
+
+  if [ ! -b "$option_device" ]; then
+    echo >&2 "ERROR: not a block device: $option_device"
+    exit 1
+  fi
+
+  for partition in "$option_public_partition" "$option_gnupg_partition"; do
+    if [ ! -b "$option_device$partition" ]; then
+      echo >&2 "ERROR: Missing device $option_device$partition"
+      exit 1
+    fi
+  done
+}
+
+################################################################################
+main() {
+  local public
+  local mount_opts=()
+
+  parse_options "$@"
+
+  if [ -n "$option_key_file" ]; then
+    mount_opts+=("-k" "$option_key_file")
+  fi
+
+  GNUPGHOME=${GNUPGHOME:-/mnt/keys/gnupg}
+  public=$(realpath "$(dirname "$(dirname "$GNUPGHOME")")/public")
+
+  set -x
+  sudo mkdir -p "$public" "$(dirname "$GNUPGHOME")"
+  sudo mount "$option_device$option_public_partition" "$public"
+  sudo chown -R "$USER" "$public"
+
+  mount-encrypted-dev \
+    "${mount_opts[@]}" \
+    "$option_device$option_gnupg_partition" \
+    "$(dirname "$GNUPGHOME")"
+
+  sudo mkdir -p --mode=0700 "$GNUPGHOME"
+  sudo chown -R "$USER" "$GNUPGHOME"
+  set +x
+
+  echo "==> GnuPG environment is now ready."
+}
+
+################################################################################
+main "$@"

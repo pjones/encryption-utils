@@ -7,6 +7,7 @@ pkgs.nixosTest {
   nodes = {
     machine = { pkgs, ... }: {
       imports = [ self.nixosModules.offlineGPG ];
+      virtualisation.emptyDiskImages = [ 512 ];
     };
   };
 

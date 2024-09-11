@@ -3,12 +3,20 @@
 set -eux
 set -o pipefail
 
+# Get disks ready for gpg-prepare:
+make-encrypted-dev -s 128 -k /etc/issue -! /dev/vdb
+
 export GNUPGHOME=/mnt/keys/gnupg
 public="$(dirname "$(dirname "$GNUPGHOME")")/public"
 
-mkdir -p "$public"
-mkdir -p "$(dirname "$GNUPGHOME")"
-mkdir -m 0700 "$GNUPGHOME"
+# Should set up GNUPGHOME:
+gpg-prepare \
+  -k /etc/issue \
+  -p 1 -g 2 \
+  /dev/vdb
+
+test -d "$GNUPGHOME"
+test -d "$public"
 
 gpg-new-key.sh -t \
   -e 'Joe T. Foo <foo@example.com>' \
