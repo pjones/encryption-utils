@@ -31,3 +31,8 @@ these tasks (e.g., creating new OpenPGP keys).
   * `bin/extend-subkey-expiration-date.sh`: Mostly automate the
     process of booting into a machine with no network and extending
     the expiration date of your subkeys.
+
+  * `bin/with-secure-directory`: Execute a shell command from within a
+    directory backed by an encrypted disk image.  Useful for
+    generating and then securing keys.
+

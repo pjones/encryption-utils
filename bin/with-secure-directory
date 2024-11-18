@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+
+################################################################################
+set -eu
+set -o pipefail
+
+################################################################################
+option_disk_name=$(basename "$0" .sh)
+option_disk_size=20M
+option_pass_name=
+
+################################################################################
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options] -- command [option...]
+
+  -n NAME  The name of the disk image to use [$option_disk_name]
+  -p ENTRY Use password-store ENTRY as the encryption key
+  -s SIZE  Disk size [$option_disk_size]
+  -h       This message
+
+Execute a command from inside a directory backed by an encrypted disk
+image.  The disk image will be deleted after the command completes.
+
+NOTE: The command is executed with its working directory set to the
+secure directory.  You should ensure that the paths used in the
+command invocation are absolute.
+
+EOF
+}
+
+################################################################################
+on_exit() {
+  if [ -e "$option_disk_name" ]; then
+    if mountpoint "$option_disk_name" >/dev/null; then
+      mount-encrypted-dev -u "$option_disk_name"
+    fi
+
+    rmdir "$option_disk_name"
+  fi
+
+  if [ -e "$option_disk_name.img" ]; then
+    rm "$option_disk_name.img"
+  fi
+}
+
+################################################################################
+main() {
+  while getopts "hn:p:s:" o; do
+    case "${o}" in
+    n)
+      option_disk_name=$OPTARG
+      ;;
+
+    p)
+      option_pass_name=$OPTARG
+      ;;
+
+    s)
+      option_disk_size=$OPTARG
+      ;;
+
+    h)
+      usage
+      exit
+      ;;
+
+    *)
+      exit 1
+      ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  if [ -e "$option_disk_name" ] || [ -e "$option_disk_name.img" ]; then
+    echo >&2 "ERROR: move $option_disk_name out of the way"
+    exit 1
+  fi
+
+  common_args=()
+
+  if [ -n "$option_pass_name" ]; then
+    common_args+=("-p" "$option_pass_name")
+  fi
+
+  trap on_exit EXIT
+  mkdir -p "$option_disk_name"
+
+  make-encrypted-disk-image \
+    "${common_args[@]}" \
+    -b 20M \
+    "$option_disk_name.img"
+
+  mount-encrypted-dev \
+    "${common_args[@]}" \
+    "$option_disk_name.img" "$option_disk_name"
+
+  (cd "$option_disk_name" && "$@")
+}
+
+################################################################################
+main "$@"
