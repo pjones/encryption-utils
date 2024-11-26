@@ -35,3 +35,19 @@ test -d "$GNUPGHOME/../backup"
 test "$(find "$GNUPGHOME/../backup" -type f | wc -l)" -eq 3
 test -s "$GNUPGHOME/../backup/$(date +%Y-%m-%d)-subkeys.txt"
 test -e "$public/public.txt"
+
+# Remove the subkeys and ensure we can restore from backup:
+test "$(gpg --list-secret-keys foo@example.com | grep -cE '^ssb ')" -eq 3
+
+while read -r key; do
+  gpg \
+    --batch --yes \
+    --delete-secret-keys "${key}!"
+done < <(
+  gpg --list-secret-keys --with-colons foo@example.com |
+    grep -E '^fpr' | tail -3 | cut -d: -f10
+)
+
+test "$(gpg --list-secret-keys foo@example.com | grep -cE '^ssb ')" -eq 0
+gpg --import "$GNUPGHOME/../backup/$(date +%Y-%m-%d)-subkeys.txt"
+test "$(gpg --list-secret-keys foo@example.com | grep -cE '^ssb ')" -eq 3

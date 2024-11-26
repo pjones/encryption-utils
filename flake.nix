@@ -6,7 +6,8 @@
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
 
     nixos-generators = {
-      url = "github:nix-community/nixos-generators";
+      # Last working commit before being moved into nixpkgs:
+      url = "github:nix-community/nixos-generators/7c60ba4bc8d6aa2ba3e5b0f6ceb9fc07bc261565";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

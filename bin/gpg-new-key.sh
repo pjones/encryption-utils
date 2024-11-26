@@ -5,7 +5,8 @@ set -eu
 set -o pipefail
 
 ################################################################################
-option_algo="ed25519/cert,sign+cv25519/encr"
+option_algo_new="ed25519/cert,sign+cv25519/encr"
+option_algo_sub="future-default"
 option_years=2
 option_email=()
 option_interactive=1
@@ -52,7 +53,7 @@ make_primary_key() {
 
   gpg \
     "${gpg_options[@]}" \
-    --default-new-key-algo "$option_algo" \
+    --default-new-key-algo "$option_algo_new" \
     --quick-generate-key "$primary_email" default cert never
 
   fp=$(
@@ -92,7 +93,7 @@ make_sub_keys() {
       "${gpg_options[@]}" \
       --quick-add-key \
       "$fingerprint" \
-      "$option_algo" \
+      "$option_algo_sub" \
       "$usage" \
       "$expire"
   done
