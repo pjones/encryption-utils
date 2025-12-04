@@ -2,17 +2,16 @@
   description = "Peter's Encryption Utilities and Notes";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
 
     nixos-generators = {
-      # Last working commit before being moved into nixpkgs:
-      url = "github:nix-community/nixos-generators/7c60ba4bc8d6aa2ba3e5b0f6ceb9fc07bc261565";
+      url = "github:nix-community/nixos-generators";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, nixpkgs, nixos-generators, nixos-hardware, ... }:
+  outputs = { self, nixpkgs, nixos-generators, ... }:
     let
       # List of supported systems:
       supportedSystems = nixpkgs.lib.platforms.unix;
@@ -22,7 +21,14 @@
         nixpkgs.lib.genAttrs supportedSystems (system: f system);
 
       # Attribute set of nixpkgs for each system:
-      nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
+      nixpkgsFor = forAllSystems (system:
+        import nixpkgs {
+          inherit system;
+          config.allowUnfree = true; # ventoy is closed now?
+          config.permittedInsecurePackages = [
+            "ventoy-1.1.07"
+          ];
+        });
 
       deps = pkgs: [
         pkgs.cryptsetup
@@ -31,7 +37,7 @@
         pkgs.gnupg
         pkgs.libossp_uuid
         pkgs.parted
-        pkgs.pinentry.tty
+        pkgs.pinentry-tty
         pkgs.util-linux
         pkgs.ventoy
         pkgs.yubikey-manager
@@ -40,23 +46,25 @@
     in
     {
       nixosModules = {
-        offlineGPG = { pkgs, ... }: {
-          environment.systemPackages = deps pkgs ++ [
-            self.packages.${pkgs.system}.encryption-utils
-            self.packages.${pkgs.system}.gpg-prepare
-          ];
+        offlineGPG = { pkgs, lib, ... }:
+          let system = pkgs.stdenv.hostPlatform.system;
+          in {
+            environment.systemPackages = deps pkgs ++ [
+              self.packages.${system}.encryption-utils
+              self.packages.${system}.gpg-prepare
+            ];
 
-          # Might be needed:
-          hardware.gpgSmartcards.enable = true;
-          programs.gnupg.agent.enable = true;
+            # Might be needed:
+            hardware.gpgSmartcards.enable = true;
+            programs.gnupg.agent.enable = true;
 
-          # Make sure networking is disabled.
-          networking.useDHCP = false;
-          networking.useNetworkd = false;
-          networking.networkmanager.enable = false;
-          networking.interfaces = { };
-          networking.wireless.enable = false;
-        };
+            # Make sure networking is disabled.
+            networking.useDHCP = lib.mkForce false;
+            networking.useNetworkd = lib.mkForce false;
+            networking.networkmanager.enable = lib.mkForce false;
+            networking.interfaces = { };
+            networking.wireless.enable = lib.mkForce false;
+          };
       };
 
       packages = forAllSystems (system:
@@ -73,19 +81,20 @@
 
           iso = nixos-generators.nixosGenerate {
             inherit system;
-
             format = "install-iso";
-            specialArgs.pkgs = nixpkgsFor.${system};
 
             modules = [
-              ({ config, lib, pkgs, ... }: {
+              self.nixosModules.offlineGPG
+
+              ({ config, lib, ... }: {
+                nixpkgs.pkgs = pkgs;
                 nix.registry.nixpkgs.flake = nixpkgs;
                 networking.hostName = "gpg";
-                system.stateVersion = "24.05";
+                system.stateVersion = "25.11";
                 users.users.root.initialHashedPassword = "";
                 isoImage.appendToMenuLabel = " w/ GPG";
 
-                isoImage.isoName = lib.mkForce (
+                image.fileName = lib.mkForce (
                   lib.concatStringsSep "-" [
                     config.system.nixos.distroId
                     "gnupg"
@@ -105,8 +114,6 @@
                     gpg-prepare /dev/sda
                 '';
               })
-
-              self.nixosModules.offlineGPG
             ];
           };
         });
@@ -114,7 +121,7 @@
       overlays = {
         default = final: prev: {
           pjones = (prev.pjones or { }) //
-            { encryption-utils = self.packages.${prev.system}.encryption-utils; };
+            { encryption-utils = self.packages.${prev.stdenv.hostPlatform.system}.encryption-utils; };
         };
       };
 
@@ -122,6 +129,7 @@
         let pkgs = nixpkgsFor.${system}; in {
           default = {
             type = "app";
+            meta.description = "Create a bootable USB drive";
             program = toString (pkgs.writeShellScript "mkventoyusb" ''
               ${self.packages.${system}.encryption-utils}/bin/make-encrypted-usb-drive \
                 -i ${self.packages.${system}.iso}/iso/nixos-*.iso \

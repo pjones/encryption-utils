@@ -1,11 +1,11 @@
 { pkgs
 , self
 }:
-pkgs.nixosTest {
+pkgs.testers.nixosTest {
   name = "gpg-new-key-test";
 
   nodes = {
-    machine = { pkgs, ... }: {
+    machine = { ... }: {
       imports = [ self.nixosModules.offlineGPG ];
       virtualisation.emptyDiskImages = [ 512 ];
     };

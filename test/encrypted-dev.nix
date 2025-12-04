@@ -1,11 +1,11 @@
 { pkgs
 , self
 }:
-pkgs.nixosTest {
+pkgs.testers.nixosTest {
   name = "encrypted-dev-test";
 
   nodes = {
-    machine = { pkgs, ... }: {
+    machine = { ... }: {
       imports = [ self.nixosModules.offlineGPG ];
       virtualisation.memorySize = 1024;
       virtualisation.emptyDiskImages = [ 512 512 ];
