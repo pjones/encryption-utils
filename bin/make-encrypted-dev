@@ -158,7 +158,7 @@ do_encrypt() {
   local loopback
 
   crypt_device=$(make_crypt_device_name "$device")
-  loopback=$(sudo_ losetup --nooverlap --find --show "$device")
+  loopback=$(sudo_ losetup --nooverlap --show --find "$device")
 
   echo >&2 "==> Setting up LUKS device: $loopback"
   cryptsetup_ luksFormat "$loopback"
