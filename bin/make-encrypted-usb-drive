@@ -24,7 +24,7 @@ usage() {
 Usage: $(basename "$0") [options]
 
   -h       This message
-  -i FILE  Copy FILE into the Ventoy ISO partition
+  -i FILE  Copy FILE into the ISO partition
   -k FILE  File to read the password from
   -p NAME  Read a password via pass(1) giving it NAME
   -s N     Reserve N megabytes of disk for GnuPG (default: $option_size)
@@ -112,25 +112,38 @@ main() {
     make_dev_opts+=("-p" "$option_pass_name")
   fi
 
-  echo >&2 "==> Creating Ventoy partitions..."
-  sudo_ ventoy -I -r "$option_size" -g "$option_device"
+  # FIXME: Update after replacing Ventoy:
+  echo >&2 "==> WARNING: The device $option_device won't be \
+    bootable until we find a replacement for Ventoy :("
 
-  echo >&2 "==> Creating Public and GnuPG partitions..."
+  local iso_dev_num=1
+  local public_dev_num=2
+  local gpg_dev_num=3
+
+  echo >&2 "==> Preparing USB device..."
   sudo_ parted -s "$option_device" -- \
+    mklabel gpt \
+    mkpart primary ext4 0% "$option_size" \
     mkpart Public ext4 "$public_start" "$public_end" \
     mkpart GnuPG ext4 "$gnupg_start" 100%
-  sudo_ mkfs.ext4 -L Public "$option_device"3
+
+  # FIXME: Update after replacing Ventoy:
+  sudo_ mkfs.ext4 -L ISO \
+    "${option_device}${iso_dev_num}"
+
+  sudo_ mkfs.ext4 -L Public \
+    "${option_device}${public_dev_num}"
 
   echo >&2 "==> Encrypting GnuPG partition with LUKS..."
   do_cmd "$(dirname "$0")"/../bin/make-encrypted-dev \
     "${make_dev_opts[@]}" \
-    "$option_device"4
+    "${option_device}${gpg_dev_num}"
 
   if [ -n "$option_iso" ]; then
-    echo >&2 "==> Copying ISO file to Ventoy"
+    echo >&2 "==> Copying ISO file to device"
     tmp_mount_dir=$(mktemp --directory "$(basename "$0")-XXXX")
     trap cleanup EXIT
-    sudo_ mount "$option_device"1 "$tmp_mount_dir"
+    sudo_ mount "${option_device}${iso_dev_num}" "$tmp_mount_dir"
     sudo_ cp "$option_iso" "$tmp_mount_dir"
     sync
   fi

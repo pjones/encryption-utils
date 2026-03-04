@@ -12,7 +12,7 @@ printf "y\ny\n" |
     "$device"
 
 # Ensure all the correct devices were created:
-for n in 1 2 3 4; do
+for n in 1 2 3; do
   test -b "$device$n"
 done
 
