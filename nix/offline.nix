@@ -35,12 +35,13 @@
       environment.variables.GNUPGHOME = "/mnt/keys/gnupg";
       services.getty.helpLine = ''
 
-        To prepare an environment for GnuPG first run the
-        gpg-prepare command.  You should give it the path to
-        device file for the USB drive that has the encrypted
-        GnuPG partition on it.  For example:
+        To prepare an environment for GnuPG first run the `gpg-prepare`
+        command.  You should give it the path to device file for the USB drive
+        that has the encrypted GnuPG partition on it.  For example:
 
           gpg-prepare /dev/sda
+
+        Then you can run tools like `gpg-new-key.sh` or `gpg-extend-key.sh`.
       '';
     }
   );

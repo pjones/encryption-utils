@@ -4,6 +4,12 @@
 
 # Extending the Expiration Date for GPG Subkeys
 
+NOTE: As of August 15, 2026, all of the information found in this
+document is encoded in the `gpg-extend-key.sh` script.  You probably
+want to skip this document and go straight to that script.
+
+-----
+
 If you followed my directions for creating a primary key that never
 expires, and subkeys that do expire, then you're going to occasionally
 need to extend the expiration date of those subkeys before they

@@ -9,6 +9,7 @@ option_device=/dev/sda
 option_public_partition=3
 option_gnupg_partition=4
 option_key_file=
+option_test_mode=0
 
 ################################################################################
 usage() {
@@ -28,7 +29,7 @@ EOF
 ################################################################################
 parse_options() {
   # Option arguments are in $OPTARG
-  while getopts "g:hk:p:" o; do
+  while getopts "g:hk:p:T" o; do
     case "${o}" in
     g)
       option_gnupg_partition=$OPTARG
@@ -45,6 +46,13 @@ parse_options() {
 
     p)
       option_public_partition=$OPTARG
+      ;;
+
+    T)
+      option_key_file=/etc/issue
+      option_public_partition=1
+      option_gnupg_partition=2
+      option_test_mode=1
       ;;
 
     *)
@@ -67,6 +75,10 @@ parse_options() {
     exit 1
   fi
 
+  if [ "$option_test_mode" -eq 1 ]; then
+    make-encrypted-dev -s 128 -k /etc/issue -! "$option_device"
+  fi
+
   for partition in "$option_public_partition" "$option_gnupg_partition"; do
     if [ ! -b "$option_device$partition" ]; then
       echo >&2 "ERROR: Missing device $option_device$partition"
@@ -87,10 +99,12 @@ main() {
   fi
 
   GNUPGHOME=${GNUPGHOME:-/mnt/keys/gnupg}
+  sudo mkdir -p "$(dirname "$GNUPGHOME")"
+
   public=$(realpath "$(dirname "$(dirname "$GNUPGHOME")")/public")
+  sudo mkdir -p "$public"
 
   set -x
-  sudo mkdir -p "$public" "$(dirname "$GNUPGHOME")"
   sudo mount "$option_device$option_public_partition" "$public"
   sudo chown -R "$USER" "$public"
 

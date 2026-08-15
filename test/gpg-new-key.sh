@@ -3,17 +3,11 @@
 set -eux
 set -o pipefail
 
-# Get disks ready for gpg-prepare:
-make-encrypted-dev -s 128 -k /etc/issue -! /dev/vdb
-
-export GNUPGHOME=/mnt/keys/gnupg
+test -n "${GNUPGHOME:-}"
 public="$(dirname "$(dirname "$GNUPGHOME")")/public"
 
 # Should set up GNUPGHOME:
-gpg-prepare \
-  -k /etc/issue \
-  -p 1 -g 2 \
-  /dev/vdb
+gpg-prepare -T /dev/vdb
 
 test -d "$GNUPGHOME"
 test -d "$public"
@@ -51,3 +45,33 @@ done < <(
 test "$(gpg --list-secret-keys foo@example.com | grep -cE '^ssb ')" -eq 0
 gpg --import "$GNUPGHOME/../backup/$(date +%Y-%m-%d)-subkeys.txt"
 test "$(gpg --list-secret-keys foo@example.com | grep -cE '^ssb ')" -eq 3
+
+################################################################################
+# Test the expiration extension script.
+function test_ensure_expries_in() {
+  local opt=$1
+  local years=$2
+  local subkeys=0
+
+  # NOTE: We subtract 24 hours (86400 seconds) because GPG will expire
+  # the key one day short of the set time.  We also take away another
+  # 30 seconds to prevent race conditions.
+  years_from_now=$(date --date="$years years" +%s)
+  years_from_now=$((years_from_now - 86400 - 30))
+
+  while read -r expires; do
+    test "$expires" "$opt" "$years_from_now"
+    subkeys=$((subkeys + 1))
+  done < <(
+    gpg --list-keys --with-colons "foo@example.com" |
+      grep -E "^sub:" |
+      cut -d: -f7
+  )
+
+  test "$subkeys" -eq 3
+}
+
+# Now extend the expiration date by 5 years ():
+test_ensure_expries_in -lt 3
+gpg-extend-key.sh -T -y 5 "foo@example.com"
+test_ensure_expries_in -ge 5

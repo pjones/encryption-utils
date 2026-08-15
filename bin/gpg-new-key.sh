@@ -9,10 +9,10 @@ option_algo_new="ed25519/cert,sign+cv25519/encr"
 option_algo_sub="future-default"
 option_years=2
 option_email=()
-option_interactive=1
 
 ################################################################################
-gpg_options=("--batch" "--yes")
+# shellcheck source=../lib/encryption-utils.sh
+. "$(dirname "$0")/../lib/encryption-utils.sh"
 
 ################################################################################
 usage() {
@@ -30,18 +30,6 @@ EOF
 }
 
 ################################################################################
-prompt() {
-  for line in "$@"; do
-    echo >&2 "==> $line"
-  done
-
-  if [ "$option_interactive" -eq 1 ]; then
-    echo >&2 "Press ENTER to continue..."
-    read -r
-  fi
-}
-
-################################################################################
 make_primary_key() {
   local primary_email="${option_email[0]}"
   local fp
@@ -51,8 +39,7 @@ make_primary_key() {
 
   prompt "Creating primary key.  Choose a passphrase for the key."
 
-  gpg \
-    "${gpg_options[@]}" \
+  gpg_ \
     --default-new-key-algo "$option_algo_new" \
     --quick-generate-key "$primary_email" default cert never
 
@@ -68,7 +55,7 @@ make_primary_key() {
         "Adding secondary address: $email." \
         "You'll need to unlock the primary key."
 
-      gpg --quick-add-uid "$primary_email" "$email"
+      gpg_ --quick-add-uid "$primary_email" "$email"
     done
   fi
 
@@ -89,52 +76,13 @@ make_sub_keys() {
       "Creating subkey \"$usage\"." \
       "You'll need to unlock the primary key."
 
-    gpg \
-      "${gpg_options[@]}" \
+    gpg_ \
       --quick-add-key \
       "$fingerprint" \
       "$option_algo_sub" \
       "$usage" \
       "$expire"
   done
-}
-
-################################################################################
-backup_keys() {
-  local fingerprint=$1
-
-  local today
-  today=$(date +%Y-%m-%d)
-
-  full=$(realpath "$(dirname "$0")/gpg-backup.sh")
-  "$full"
-
-  gpg \
-    --armor \
-    --output "$GNUPGHOME/../backup/$today-public.txt" \
-    --export "$fingerprint"
-
-  prompt \
-    "Backup up secret subkeys." \
-    "You'll need to unlock the primary key."
-
-  gpg \
-    --armor \
-    --export-secret-subkeys "$fingerprint" \
-    >"$GNUPGHOME/../backup/$today-subkeys.txt"
-
-  # Make it easy to transfer the public key:
-  if [ -d "$GNUPGHOME/../../public" ]; then
-    cp \
-      "$GNUPGHOME/../backup/$today-public.txt" \
-      "$GNUPGHOME/../../public/public.txt"
-
-    cp -r \
-      "$GNUPGHOME/openpgp-revocs.d" \
-      "$GNUPGHOME/../../public/$today-openpgp-revocs.d"
-
-    echo "==> Public key stored in $(realpath "$GNUPGHOME/../../public")"
-  fi
 }
 
 ################################################################################
@@ -174,12 +122,7 @@ main() {
 
   shift $((OPTIND - 1))
 
-  if [ -n "${GNUPGHOME:-}" ]; then
-    mkdir -p "$GNUPGHOME"
-  else
-    echo >&2 "ERROR: please set GNUPGHOME first"
-    exit 1
-  fi
+  gpg_ensure_state
 
   if [ "${#option_email[@]}" -eq 0 ]; then
     echo >&2 "ERROR: you must use -e at least once"
@@ -188,7 +131,7 @@ main() {
 
   fingerprint=$(make_primary_key)
   make_sub_keys "$fingerprint"
-  backup_keys "$fingerprint"
+  gpg_backup_keys "$fingerprint"
 
   cat >&2 <<DONE
 ==> Done!

@@ -3,7 +3,15 @@
 ################################################################################
 option_key_file=
 option_pass_name=
+option_interactive=1
 tmp_keyfile=
+
+################################################################################
+gpg_options=(
+  "--batch"
+  "--yes"
+  "--expert"
+)
 
 ################################################################################
 # Ensure any temporary files are cleaned up.
@@ -74,6 +82,19 @@ sudo_() {
 }
 
 ################################################################################
+# Print a message then wait for the user to press enter.
+prompt() {
+  for line in "$@"; do
+    echo >&2 "==> $line"
+  done
+
+  if [ "$option_interactive" -eq 1 ]; then
+    echo >&2 "Press ENTER to continue..."
+    read -r
+  fi
+}
+
+################################################################################
 # Run cryptsetup with proper flags for the key file.
 cryptsetup_() {
   local flags=("--batch-mode")
@@ -88,6 +109,61 @@ cryptsetup_() {
     fi
 
     sudo_ cryptsetup "${flags[@]}" "$@"
+  fi
+}
+
+################################################################################
+function gpg_ensure_state() {
+  if [ -n "${GNUPGHOME:-}" ]; then
+    mkdir -p "$GNUPGHOME"
+  else
+    echo >&2 "ERROR: please set GNUPGHOME first"
+    exit 1
+  fi
+}
+
+################################################################################
+function gpg_() {
+  gpg_ensure_state
+  gpg "${gpg_options[@]}" "$@"
+}
+
+################################################################################
+function gpg_backup_keys() {
+  gpg_ensure_state
+  local fingerprint=$1
+
+  local today
+  today=$(date +%Y-%m-%d)
+
+  full=$(realpath "$(dirname "$0")/gpg-backup.sh")
+  "$full"
+
+  gpg_ \
+    --armor \
+    --output "$GNUPGHOME/../backup/$today-public.txt" \
+    --export "$fingerprint"
+
+  prompt \
+    "Backing up secret subkeys..." \
+    "You'll need to unlock the primary key."
+
+  gpg_ \
+    --armor \
+    --export-secret-subkeys "$fingerprint" \
+    >"$GNUPGHOME/../backup/$today-subkeys.txt"
+
+  # Make it easy to transfer the public key:
+  if [ -d "$GNUPGHOME/../../public" ]; then
+    cp \
+      "$GNUPGHOME/../backup/$today-public.txt" \
+      "$GNUPGHOME/../../public/public.txt"
+
+    cp -r \
+      "$GNUPGHOME/openpgp-revocs.d" \
+      "$GNUPGHOME/../../public/$today-openpgp-revocs.d"
+
+    echo "==> Public key stored in $(realpath "$GNUPGHOME/../../public")"
   fi
 }
 

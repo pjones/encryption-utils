@@ -10,7 +10,7 @@ encrypted partition on the same thumb drive.
 ## Choose an ISO Image
 
 I've decided to build a NixOS minimal ISO with some additions that
-includes `gpg2`.  Any Linux ISO can be used in this process.  Pick one
+includes `gpg`.  Any Linux ISO can be used in this process.  Pick one
 that includes the software that you'll need.
 
 This repository includes a custom NixOS configuration that includes

@@ -63,6 +63,11 @@ following:
 
 ## Creating the Key
 
+NOTE: The following steps have been incorporated into the
+`gpg-prepare` and `gpg-new-key.sh` scripts.  These two scripts are
+part of the ISO image described in the
+[offline-usb-drive.md](offline-usb-drive.md) file.
+
 ### Preparation
 
   #. Build a USB stick where you can boot into an offline Linux
