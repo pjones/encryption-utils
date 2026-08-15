@@ -1,0 +1,15 @@
+name: "Build and Test"
+
+on:
+  pull_request:
+    types: [ "opened", "synchronize", "reopened", "closed" ]
+  push:
+    branches: [ "trunk" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: nixbuild/nix-quick-install-action@v34
+      - run: nix flake check --print-build-logs
