@@ -1,12 +1,13 @@
-{ pkgs
-, self
+{
+  pkgs,
+  self,
 }:
 pkgs.testers.nixosTest {
   name = "make-usb-drive-test";
 
   nodes = {
     machine = { ... }: {
-      imports = [ self.nixosModules.offlineGPG ];
+      imports = [ self.nixosModules.offline ];
       virtualisation.memorySize = 1024;
       virtualisation.emptyDiskImages = [ 2048 ];
     };
